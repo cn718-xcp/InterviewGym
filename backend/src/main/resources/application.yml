@@ -23,4 +23,7 @@ llm:
   embedding-model: ${LLM_EMBEDDING_MODEL:}        # v2 简历 RAG 用（D011），如 embedding-3；不配则 RAG 关闭
   embedding-base-url: ${LLM_EMBEDDING_BASE_URL:}  # D013：chat 与嵌入不同服务商时独立配置（如 DeepSeek chat + 智谱 embedding）；空 = 复用 base-url
   embedding-api-key: ${LLM_EMBEDDING_API_KEY:}    # 空 = 复用 api-key
+  asr-model: ${LLM_ASR_MODEL:}                    # v3 语音作答用（D014），如 FunAudioLLM/SenseVoiceSmall；不配则语音关闭
+  asr-base-url: ${LLM_ASR_BASE_URL:}              # D014：ASR 独立服务商时配置（如硅基流动）；空 = 复用 base-url
+  asr-api-key: ${LLM_ASR_API_KEY:}                # 空 = 复用 api-key
   read-timeout-seconds: ${LLM_READ_TIMEOUT_SECONDS:90}

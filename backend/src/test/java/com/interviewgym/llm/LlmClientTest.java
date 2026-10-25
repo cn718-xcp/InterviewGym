@@ -30,6 +30,7 @@ class LlmClientTest {
     private String baseUrl;
     private final AtomicReference<String> lastRequestBody = new AtomicReference<>();
     private final AtomicReference<String> lastAuthHeader = new AtomicReference<>();
+    private final AtomicReference<String> lastContentType = new AtomicReference<>();
     private volatile int respondStatus = 200;
     private volatile String respondBody = "{}";
 
@@ -51,6 +52,7 @@ class LlmClientTest {
             lastRequestBody.set(new String(in.readAllBytes(), StandardCharsets.UTF_8));
         }
         lastAuthHeader.set(exchange.getRequestHeaders().getFirst("Authorization"));
+        lastContentType.set(exchange.getRequestHeaders().getFirst("Content-Type"));
         byte[] bytes = respondBody.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(respondStatus, bytes.length);
@@ -273,6 +275,126 @@ class LlmClientTest {
         assertThatThrownBy(() -> client(props).embed(List.of("文本")))
                 .isInstanceOf(LlmException.class)
                 .hasMessageContaining("LLM_EMBEDDING_BASE_URL");
+
+        assertThat(lastRequestBody.get()).isNull();
+    }
+
+    /* ---------- v3 transcribe（D014，spec: llm-client.md / voice-mode.md） ---------- */
+
+    /** 音频内容用纯 ASCII 假字节：桩端点把 body 按 UTF-8 读成字符串，真实音频字节会破坏往返 */
+    private static final byte[] FAKE_AUDIO = "FAKE-WEBM-AUDIO-BYTES".getBytes(StandardCharsets.UTF_8);
+
+    @Test
+    void transcribeReturnsTextWithMultipartBody() {
+        LlmProperties props = props();
+        props.setAsrModel("SenseVoiceSmall");
+        respondBody = "{\"text\":\"索引的底层是 B+ 树\"}";
+
+        String text = client(props).transcribe(FAKE_AUDIO, "answer.webm", "audio/webm");
+
+        assertThat(text).isEqualTo("索引的底层是 B+ 树");
+        // multipart 类型在 Content-Type 头（含 boundary），各部分在 body
+        assertThat(lastContentType.get()).startsWith("multipart/form-data");
+        String requestBody = lastRequestBody.get();
+        assertThat(requestBody)
+                .contains("name=\"model\"")
+                .contains("SenseVoiceSmall")
+                .contains("name=\"file\"")
+                .contains("filename=\"answer.webm\"")
+                .contains("Content-Type: audio/webm")
+                .contains("FAKE-WEBM-AUDIO-BYTES");
+        assertThat(lastAuthHeader.get()).isEqualTo("Bearer test-key");
+    }
+
+    @Test
+    void transcribeThrowsIllegalStateWithoutRequestWhenAsrModelUnconfigured() {
+        assertThatThrownBy(() -> client(props()).transcribe(FAKE_AUDIO, "answer.webm", "audio/webm"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("LLM_ASR_MODEL");
+
+        assertThat(lastRequestBody.get()).isNull();
+    }
+
+    @Test
+    void transcribeThrowsOnEmptyAudio() {
+        LlmProperties props = props();
+        props.setAsrModel("SenseVoiceSmall");
+
+        assertThatThrownBy(() -> client(props).transcribe(new byte[0], "answer.webm", "audio/webm"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void transcribeThrowsLlmExceptionOnServerErrorStatus() {
+        LlmProperties props = props();
+        props.setAsrModel("SenseVoiceSmall");
+        respondStatus = 500;
+        respondBody = "{\"error\":{\"message\":\"internal\"}}";
+
+        assertThatThrownBy(() -> client(props).transcribe(FAKE_AUDIO, "answer.webm", "audio/webm"))
+                .isInstanceOf(LlmException.class)
+                .hasMessageContaining("500")
+                .hasMessageNotContaining("test-key");
+    }
+
+    @Test
+    void transcribeThrowsWhenResponseTextBlank() {
+        LlmProperties props = props();
+        props.setAsrModel("SenseVoiceSmall");
+        respondBody = "{\"text\":\"  \"}";
+
+        assertThatThrownBy(() -> client(props).transcribe(FAKE_AUDIO, "answer.webm", "audio/webm"))
+                .isInstanceOf(LlmException.class)
+                .hasMessageContaining("ASR 返回内容为空");
+    }
+
+    @Test
+    void transcribeUsesIndependentEndpointWhenConfigured() throws IOException {
+        // 第二个本地端点充当独立 ASR 服务（D014：如 DeepSeek chat + 硅基流动 ASR 混搭）
+        AtomicReference<String> asrBody = new AtomicReference<>();
+        AtomicReference<String> asrAuth = new AtomicReference<>();
+        HttpServer asrServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        asrServer.createContext("/", ex -> {
+            try (InputStream in = ex.getRequestBody()) {
+                asrBody.set(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+            }
+            asrAuth.set(ex.getRequestHeaders().getFirst("Authorization"));
+            byte[] bytes = "{\"text\":\"独立端点转写\"}".getBytes(StandardCharsets.UTF_8);
+            ex.getResponseHeaders().set("Content-Type", "application/json");
+            ex.sendResponseHeaders(200, bytes.length);
+            try (OutputStream out = ex.getResponseBody()) {
+                out.write(bytes);
+            }
+        });
+        asrServer.start();
+        try {
+            LlmProperties props = props();
+            props.setAsrModel("FunAudioLLM/SenseVoiceSmall");
+            props.setAsrBaseUrl("http://127.0.0.1:" + asrServer.getAddress().getPort() + "/v1/");
+            props.setAsrApiKey("asr-key");
+
+            String text = client(props).transcribe(FAKE_AUDIO, "answer.webm", "audio/webm");
+
+            assertThat(text).isEqualTo("独立端点转写");
+            assertThat(asrBody.get())
+                    .contains("name=\"file\"")
+                    .contains("FunAudioLLM/SenseVoiceSmall");
+            assertThat(asrAuth.get()).isEqualTo("Bearer asr-key");
+            // chat 端点未被触碰（独立 base-url 尾斜杠归一化顺带覆盖）
+            assertThat(lastRequestBody.get()).isNull();
+        } finally {
+            asrServer.stop(0);
+        }
+    }
+
+    @Test
+    void transcribeThrowsWithoutRequestWhenNoEndpointConfigured() {
+        LlmProperties props = new LlmProperties();  // base-url / api-key 全空
+        props.setAsrModel("SenseVoiceSmall");
+
+        assertThatThrownBy(() -> client(props).transcribe(FAKE_AUDIO, "answer.webm", "audio/webm"))
+                .isInstanceOf(LlmException.class)
+                .hasMessageContaining("LLM_ASR_BASE_URL");
 
         assertThat(lastRequestBody.get()).isNull();
     }

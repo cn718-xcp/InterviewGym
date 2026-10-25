@@ -27,6 +27,15 @@ public class LlmProperties {
     /** 嵌入端点独立 api-key（D013）；空 = 复用 api-key。环境变量 LLM_EMBEDDING_API_KEY */
     private String embeddingApiKey = "";
 
+    /** 语音转写模型名（v3，D014），如 FunAudioLLM/SenseVoiceSmall；空 = 语音功能关闭。环境变量 LLM_ASR_MODEL */
+    private String asrModel = "";
+
+    /** ASR 端点独立 base-url（D014），如 https://api.siliconflow.cn/v1；空 = 复用 base-url。环境变量 LLM_ASR_BASE_URL */
+    private String asrBaseUrl = "";
+
+    /** ASR 端点独立 api-key（D014）；空 = 复用 api-key。环境变量 LLM_ASR_API_KEY */
+    private String asrApiKey = "";
+
     /** 单次调用读超时（秒）。出题/评估单次生成较慢，默认给足（spec: llm-client.md） */
     private int readTimeoutSeconds = 90;
 
@@ -76,6 +85,30 @@ public class LlmProperties {
 
     public void setEmbeddingApiKey(String embeddingApiKey) {
         this.embeddingApiKey = embeddingApiKey;
+    }
+
+    public String getAsrModel() {
+        return asrModel;
+    }
+
+    public void setAsrModel(String asrModel) {
+        this.asrModel = asrModel;
+    }
+
+    public String getAsrBaseUrl() {
+        return asrBaseUrl;
+    }
+
+    public void setAsrBaseUrl(String asrBaseUrl) {
+        this.asrBaseUrl = asrBaseUrl;
+    }
+
+    public String getAsrApiKey() {
+        return asrApiKey;
+    }
+
+    public void setAsrApiKey(String asrApiKey) {
+        this.asrApiKey = asrApiKey;
     }
 
     public int getReadTimeoutSeconds() {

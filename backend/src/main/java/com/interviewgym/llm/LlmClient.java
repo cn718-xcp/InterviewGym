@@ -5,9 +5,14 @@ import com.interviewgym.config.LlmProperties;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
@@ -50,6 +55,10 @@ public class LlmClient {
                 notBlank(props.getEmbeddingModel()) ? props.getEmbeddingModel() : "未配置（简历 RAG 不可用）",
                 notBlank(props.getEmbeddingBaseUrl()) ? props.getEmbeddingBaseUrl() + "（独立）" : "复用 chat 端点",
                 notBlank(props.getEmbeddingApiKey()) ? "已配置（独立）" : "复用 chat 端点");
+        log.info("ASR 客户端就绪：model=[{}], base-url=[{}], api-key={}",
+                notBlank(props.getAsrModel()) ? props.getAsrModel() : "未配置（语音作答不可用）",
+                notBlank(props.getAsrBaseUrl()) ? props.getAsrBaseUrl() + "（独立）" : "复用 chat 端点",
+                notBlank(props.getAsrApiKey()) ? "已配置（独立）" : "复用 chat 端点");
     }
 
     /**
@@ -122,6 +131,62 @@ public class LlmClient {
                     .retrieve()
                     .body(EmbeddingResponse.class);
             return alignVectors(texts.size(), response);
+        } catch (RestClientResponseException e) {
+            throw new LlmException("LLM 端点返回错误状态：" + e.getStatusCode().value(), e);
+        } catch (RestClientException e) {
+            String message = hasIoCause(e) ? "LLM 端点不可达或超时" : "LLM 响应处理失败";
+            throw new LlmException(message, e);
+        }
+    }
+
+    /**
+     * 语音转写：POST /audio/transcriptions（multipart：file + model），返回响应 {text} 文本（v3，D014）。
+     * 端点独立可配（同 D013 模式）：asr-base-url / asr-api-key 缺省回落 chat 端点；不要求 chat 的 model 已配置。
+     * 音频字节与转写文本永不写日志（spec: voice-mode.md 不变式）。
+     *
+     * @throws IllegalArgumentException audio 为空字节数组
+     * @throws IllegalStateException    转写模型未配置（配置缺失，区别于端点故障；调用方据此转 400）
+     * @throws LlmException            端点未配置 / 不可达或超时 / 错误状态码 / 返回文本为空
+     */
+    public String transcribe(byte[] audio, String filename, String contentType) {
+        if (audio == null || audio.length == 0) {
+            throw new IllegalArgumentException("audio 不得为空");
+        }
+        if (!notBlank(props.getAsrModel())) {
+            throw new IllegalStateException("转写模型未配置，请设置环境变量 LLM_ASR_MODEL");
+        }
+        String baseUrl = notBlank(props.getAsrBaseUrl()) ? props.getAsrBaseUrl() : props.getBaseUrl();
+        String apiKey = notBlank(props.getAsrApiKey()) ? props.getAsrApiKey() : props.getApiKey();
+        if (!notBlank(baseUrl) || !notBlank(apiKey)) {
+            throw new LlmException("ASR 端点未配置，请设置 LLM_BASE_URL / LLM_API_KEY"
+                    + " 或转写专用的 LLM_ASR_BASE_URL / LLM_ASR_API_KEY");
+        }
+        // 不用 MultipartBodyBuilder：其类初始化硬引用 reactive-streams（WebFlux 才有，D007 零依赖下缺失），
+        // 手搭 MultiValueMap + HttpEntity 走 FormHttpMessageConverter 经典路径（LlmClientTest 实测拦截）
+        LinkedMultiValueMap<String, HttpEntity<?>> requestBody = new LinkedMultiValueMap<>();
+        requestBody.add("model", new HttpEntity<>(props.getAsrModel()));
+        HttpHeaders fileHeaders = new HttpHeaders();
+        fileHeaders.setContentType(MediaType.parseMediaType(
+                notBlank(contentType) ? contentType : "application/octet-stream"));
+        // 文件名携带容器格式（webm）——端点据此解析音频；音频只进内存，不落任何文件
+        requestBody.add("file", new HttpEntity<>(new ByteArrayResource(audio) {
+            @Override
+            public String getFilename() {
+                return notBlank(filename) ? filename : "answer.webm";
+            }
+        }, fileHeaders));
+        try {
+            TranscriptionResponse response = restClient.post()
+                    .uri(endpointUrl(baseUrl, "/audio/transcriptions"))
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .header("Authorization", "Bearer " + apiKey.trim())
+                    .body(requestBody)
+                    .retrieve()
+                    .body(TranscriptionResponse.class);
+            if (response == null || response.text() == null || response.text().isBlank()) {
+                throw new LlmException("ASR 返回内容为空");
+            }
+            return response.text();
         } catch (RestClientResponseException e) {
             throw new LlmException("LLM 端点返回错误状态：" + e.getStatusCode().value(), e);
         } catch (RestClientException e) {
@@ -208,5 +273,10 @@ public class LlmClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record EmbeddingData(int index, List<Double> embedding) {
+    }
+
+    /** OpenAI 兼容 /audio/transcriptions 响应：{"text": "..."}（其余字段忽略） */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record TranscriptionResponse(String text) {
     }
 }
