@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: interview-gym
+
+server:
+  port: 8080
+
+# LLM 端点：任一 OpenAI 兼容服务均可（GLM / DeepSeek / Qwen ...）
+# 密钥只从环境变量注入 —— AGENTS.md 红线 1
+llm:
+  base-url: ${LLM_BASE_URL:}
+  api-key: ${LLM_API_KEY:}
+  model: ${LLM_MODEL:}

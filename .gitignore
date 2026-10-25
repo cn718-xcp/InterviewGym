@@ -1,0 +1,26 @@
+# --- 密钥与环境（红线：任何明文密钥不得进版本库） ---
+.env
+.env.*
+
+# --- 门禁状态文件 ---
+.gate-state
+
+# --- Java / Maven ---
+backend/target/
+*.class
+
+# --- IDE ---
+.idea/
+*.iml
+.vscode/
+
+# --- 数据目录（用户隐私：简历、练习记录，永不入库） ---
+backend/data/
+*.db
+*.mv.db
+
+# --- OS / 日志 ---
+.DS_Store
+Thumbs.db
+*.log
+logs/
