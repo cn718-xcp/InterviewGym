@@ -67,4 +67,4 @@ transcribe(audio, filename, contentType)   [v3，D014]
 - [ ] v2：embedding-model 未配置 → IllegalStateException，不发请求；空列表入参 → IllegalArgumentException
 - [ ] v2：embed 端点 5xx → LlmException，消息不含密钥与请求体
 - [ ] v2（D013）：配置独立 embedding-base-url/api-key 后 embed 命中该端点且 chat 端点不被触碰；未配置独立端点时回落 chat 端点；全未配置 → LlmException 不发请求
-- [ ] v3（D014）：transcribe 正常返回 text，请求体为 multipart 且含 model 与 file 部分；asr-model 未配置 → IllegalStateException 不发请求；独立 asr 端点命中且 chat 端点不被触碰；端点 5xx → LlmException 消息不含密钥与内容
+- [ ] v3（D014）：transcribe 正常返回 text，请求体为 multipart 且含 model 与 file 部分；asr-model 未配置 → IllegalStateException 不发请求；独立 asr 端点命中且 chat 端点不被触碰；端点 5xx → LlmException 消息不含密钥与内容（均沿用本地 JDK HttpServer 桩端点模式，AI-FAILURES #1）

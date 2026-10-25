@@ -49,7 +49,7 @@
 
 ## 验收测试
 
-- [ ] transcribe 正常：请求体为 multipart 且含 model 字段与 file 部分（MockRestServiceServer 校验），返回 `{text}` 文本
+- [ ] transcribe 正常：请求体为 multipart 且含 model 字段与 file 部分（本地桩端点校验，沿用 LlmClientTest 的 JDK HttpServer 模式——见 AI-FAILURES #1 不用 MockRestServiceServer），返回 `{text}` 文本
 - [ ] asr-model 未配置 → `IllegalStateException`（400 语义），不发请求
 - [ ] 独立 asr-base-url / asr-api-key 配置后命中该端点且 chat 端点不被触碰；未配置独立端点时回落 chat 端点（镜像 D013 测试）
 - [ ] ASR 端点 5xx → `LlmException`，消息不含密钥与音频内容
