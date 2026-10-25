@@ -20,4 +20,6 @@ llm:
   api-key: ${LLM_API_KEY:}
   model: ${LLM_MODEL:}
   embedding-model: ${LLM_EMBEDDING_MODEL:}
+  embedding-base-url: ${LLM_EMBEDDING_BASE_URL:}
+  embedding-api-key: ${LLM_EMBEDDING_API_KEY:}
   read-timeout-seconds: ${LLM_READ_TIMEOUT_SECONDS:90}

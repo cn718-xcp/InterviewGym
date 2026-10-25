@@ -37,6 +37,9 @@ export LLM_API_KEY=你的key
 export LLM_MODEL=glm-4-xx
 # 可选：v2 简历针对性出题需要嵌入端点（如智谱 embedding-3；不配则 RAG 关闭，退回纯 JD 出题）
 export LLM_EMBEDDING_MODEL=embedding-3
+# 可选：chat 与嵌入用不同服务商时独立配置（D013）——如 chat 走 DeepSeek 官方（无嵌入端点）+ 智谱嵌入：
+# export LLM_EMBEDDING_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+# export LLM_EMBEDDING_API_KEY=嵌入服务商的key
 # 可选：export LLM_READ_TIMEOUT_SECONDS=90
 cd backend && mvn spring-boot:run
 ```

@@ -21,6 +21,12 @@ public class LlmProperties {
     /** 嵌入模型名（v2，D011），如 embedding-3；空 = 简历 RAG 关闭。从环境变量 LLM_EMBEDDING_MODEL 注入 */
     private String embeddingModel = "";
 
+    /** 嵌入端点独立 base-url（D013），如 https://open.bigmodel.cn/api/paas/v4；空 = 复用 base-url。环境变量 LLM_EMBEDDING_BASE_URL */
+    private String embeddingBaseUrl = "";
+
+    /** 嵌入端点独立 api-key（D013）；空 = 复用 api-key。环境变量 LLM_EMBEDDING_API_KEY */
+    private String embeddingApiKey = "";
+
     /** 单次调用读超时（秒）。出题/评估单次生成较慢，默认给足（spec: llm-client.md） */
     private int readTimeoutSeconds = 90;
 
@@ -54,6 +60,22 @@ public class LlmProperties {
 
     public void setEmbeddingModel(String embeddingModel) {
         this.embeddingModel = embeddingModel;
+    }
+
+    public String getEmbeddingBaseUrl() {
+        return embeddingBaseUrl;
+    }
+
+    public void setEmbeddingBaseUrl(String embeddingBaseUrl) {
+        this.embeddingBaseUrl = embeddingBaseUrl;
+    }
+
+    public String getEmbeddingApiKey() {
+        return embeddingApiKey;
+    }
+
+    public void setEmbeddingApiKey(String embeddingApiKey) {
+        this.embeddingApiKey = embeddingApiKey;
     }
 
     public int getReadTimeoutSeconds() {

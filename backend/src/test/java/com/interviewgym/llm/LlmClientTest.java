@@ -226,4 +226,54 @@ class LlmClientTest {
                 .isInstanceOf(LlmException.class)
                 .hasMessageContaining("不对应");
     }
+
+    @Test
+    void embedUsesIndependentEndpointWhenConfigured() throws IOException {
+        // 第二个本地端点充当独立嵌入服务（D013：如 DeepSeek chat + 智谱 embedding 混搭）
+        AtomicReference<String> embedBody = new AtomicReference<>();
+        AtomicReference<String> embedAuth = new AtomicReference<>();
+        HttpServer embedServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        embedServer.createContext("/", ex -> {
+            try (InputStream in = ex.getRequestBody()) {
+                embedBody.set(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+            }
+            embedAuth.set(ex.getRequestHeaders().getFirst("Authorization"));
+            byte[] bytes = "{\"data\":[{\"index\":0,\"embedding\":[0.5]}]}".getBytes(StandardCharsets.UTF_8);
+            ex.getResponseHeaders().set("Content-Type", "application/json");
+            ex.sendResponseHeaders(200, bytes.length);
+            try (OutputStream out = ex.getResponseBody()) {
+                out.write(bytes);
+            }
+        });
+        embedServer.start();
+        try {
+            LlmProperties props = props();
+            props.setEmbeddingModel("bge-m3");
+            props.setEmbeddingBaseUrl(
+                    "http://127.0.0.1:" + embedServer.getAddress().getPort() + "/v1/");
+            props.setEmbeddingApiKey("embed-key");
+
+            List<float[]> vectors = client(props).embed(List.of("文本"));
+
+            assertThat(vectors.get(0)).containsExactly(0.5f);
+            assertThat(embedBody.get()).contains("\"model\":\"bge-m3\"").contains("\"input\"");
+            assertThat(embedAuth.get()).isEqualTo("Bearer embed-key");
+            // chat 端点未被触碰（尾斜杠归一化也顺带覆盖：独立 base-url 以 '/' 结尾）
+            assertThat(lastRequestBody.get()).isNull();
+        } finally {
+            embedServer.stop(0);
+        }
+    }
+
+    @Test
+    void embedThrowsWithoutRequestWhenNoEndpointConfigured() {
+        LlmProperties props = new LlmProperties();  // base-url / api-key 全空
+        props.setEmbeddingModel("embedding-3");
+
+        assertThatThrownBy(() -> client(props).embed(List.of("文本")))
+                .isInstanceOf(LlmException.class)
+                .hasMessageContaining("LLM_EMBEDDING_BASE_URL");
+
+        assertThat(lastRequestBody.get()).isNull();
+    }
 }

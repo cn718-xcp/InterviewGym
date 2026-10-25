@@ -8,11 +8,11 @@
 
 ## 输入 / 输出边界
 
-- 输入：system prompt + user prompt（String）；`LlmProperties`（base-url / api-key / model / read-timeout-seconds / **embedding-model，v2 起可空**）
-- 输出：`chat` 返回 LLM 回复的纯文本内容（String）；`embed`（v2 新增，D011）返回与输入等长的 `float[]` 向量列表。JSON 解析、schema 校验、修复重试**不在本层**，由 core/ 负责
+- 输入：system prompt + user prompt（String）；`LlmProperties`（base-url / api-key / model / read-timeout-seconds / **v2 起：embedding-model、embedding-base-url、embedding-api-key——嵌入端点可独立配置，缺省复用 chat 端点，D013**）
+- 输出：`chat` 返回 LLM 回复的纯文本内容（String）；`embed`（v2，D011）返回与输入等长的 `float[]` 向量列表。JSON 解析、schema 校验、修复重试**不在本层**，由 core/ 负责
 - 不变式（必须永远成立的事实）：
-  - api-key 只经环境变量 → `LlmProperties` 注入，代码/日志/异常信息中永不出现（红线 1）
-  - 请求只发往配置的 base-url，不引入任何其他外部服务（红线 2）；embed 与 chat 共用同一 base-url / api-key
+  - api-key（chat 与嵌入）只经环境变量 → `LlmProperties` 注入，代码/日志/异常信息中永不出现（红线 1）
+  - chat 只发往 base-url；embed 发往 embedding-base-url（未配置时复用 base-url）——**除这两个显式配置的端点外不引入任何外部服务**（红线 2）
   - 零新 Maven 依赖（D007 的核心收益）；测试与 CI 中**永不调用真实端点**
 
 ## 行为流程 / 状态机
@@ -32,8 +32,9 @@ embed(texts)                          [v2，D011]
 ```
 
 - 超时：连接 5s，读 90s（出题/评估单次生成较慢；`llm.read-timeout-seconds` 可配）
-- 配置校验：base-url / api-key / model 任一为空即抛 `LlmException`，不发请求；base-url 尾部 `/` 自动归一化
-- `embed` 额外校验：`embedding-model` 为空 → `IllegalStateException`（区别于 LlmException：这是配置缺失而非端点故障，调用方据此区分 400/502 语义）；输入列表空 → `IllegalArgumentException`；端点返回条数或 index 与输入不对应 → `LlmException`
+- 配置校验：chat 的 base-url / api-key / model 任一为空即抛 `LlmException`，不发请求；base-url 尾部 `/` 自动归一化（chat 与嵌入端点各自归一化）
+- `embed` 端点解析（D013）：base-url = embedding-base-url（未配置则回落 base-url）；api-key = embedding-api-key（未配置则回落 api-key）；**不要求 chat 的 model 已配置**
+- `embed` 额外校验：`embedding-model` 为空 → `IllegalStateException`（区别于 LlmException：这是配置缺失而非端点故障，调用方据此区分 400/502 语义）；解析后的 base-url 或 api-key 为空 → `LlmException`（消息提示 LLM_BASE_URL/LLM_API_KEY 或 LLM_EMBEDDING_BASE_URL/LLM_EMBEDDING_API_KEY）；输入列表空 → `IllegalArgumentException`；端点返回条数或 index 与输入不对应 → `LlmException`
 - temperature 固定 0.3（仅 chat）：出题与评估要稳定，不要发散；embed 无 temperature
 - 端点未配置（base-url/model 为空）→ 直接抛 `LlmException`，不发请求
 
@@ -58,3 +59,4 @@ embed(texts)                          [v2，D011]
 - [ ] v2：embed 正常响应按 index 对齐返回等长向量列表，请求体含 embedding-model 与 input
 - [ ] v2：embedding-model 未配置 → IllegalStateException，不发请求；空列表入参 → IllegalArgumentException
 - [ ] v2：embed 端点 5xx → LlmException，消息不含密钥与请求体
+- [ ] v2（D013）：配置独立 embedding-base-url/api-key 后 embed 命中该端点且 chat 端点不被触碰；未配置独立端点时回落 chat 端点；全未配置 → LlmException 不发请求
