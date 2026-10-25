@@ -10,4 +10,6 @@
 | D004 | 2026-10-25 | v1 不引入数据库，先内存跑通 | 直接上 MySQL/H2 | 自用单用户工具，持久化在真正需要时（v2 练习记录要跨天）再选型，避免过早优化 |
 | D005 | 2026-10-25 | LLM 走 OpenAI 兼容可配置端点 | 绑定单一厂商 SDK | 换模型零改码；为后续按成本/质量路由打基础；密钥只走环境变量（红线 1） |
 | D006 | 2026-10-25 | 门禁 = PostToolUse 编译门禁 + 收尾 verify + CI | 纯人工审查 | 让"AI 改坏立刻被拦"成为默认态而非依赖自觉；翻车日志有拦截渠道可统计 |
-| D007 | 待定 | LLM 客户端选型：Spring AI vs 自写 WebClient | — | 故意留白：v1 第一次迭代用 plan mode 决策，作为流程的第一次完整演练 |
+| D007 | 2026-10-25 | LLM 客户端自写：Spring Web RestClient（同步） | Spring AI starter / WebClient+WebFlux | OpenAI 兼容接口本质是一个 POST+JSON，~150 行全可控（D002 每行可讲清）；RestClient 零新依赖（红线 5 免疫）；结构化输出靠 prompt 约束+解析容错而非框架。plan mode 首次完整演练，AskUserQuestion 人类拍板（原"待定"留白即为此设计） |
+| D008 | 2026-10-25 | 前端 = Boot 静态资源托管的单文件原生 HTML/JS，零构建链 | Vue/React SPA / htmx / 模板引擎 | AGENTS.md 已定"极简优先、不引入重前端工程链"；v1 是单页三屏表单流，原生 JS 足够；零构建 = CI 不装 node |
+| D009 | 2026-10-25 | v1 出题构成与评分规则定稿：10 题 = 6 八股 + 2 项目深挖 + 2 场景，难度 4:4:2；评分 1-5 锚点制；聚合在代码不在 LLM（均值代码算、≤2 分知识点强制入薄弱点） | 全八股 / 0-10 打分 / LLM 全权聚合 | 真实面试混合题型；锚点制降低 LLM 打分漂移；LLM 只做定性、代码做规则，报告可解释可复算（红线 3：2026-10-25 plan mode 人类确认，spec 见 question-generation.md / evaluation.md） |
