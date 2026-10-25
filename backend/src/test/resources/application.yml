@@ -1,0 +1,22 @@
+# 测试专属配置（整体遮蔽主 application.yml，故 llm 段需复制）
+# 每个测试上下文一个独立随机库文件，互不串数据；落在 target/ 下（gitignore 天然覆盖）
+spring:
+  application:
+    name: interview-gym
+  datasource:
+    url: jdbc:sqlite:target/test-${random.uuid}.db
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 1
+  sql:
+    init:
+      mode: always
+
+server:
+  port: 8080
+
+llm:
+  base-url: ${LLM_BASE_URL:}
+  api-key: ${LLM_API_KEY:}
+  model: ${LLM_MODEL:}
+  read-timeout-seconds: ${LLM_READ_TIMEOUT_SECONDS:90}

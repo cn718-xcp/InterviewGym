@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JacksonException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interviewgym.llm.LlmClient;
-import com.interviewgym.store.InMemoryInterviewStore;
+import com.interviewgym.store.InterviewStore;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -54,9 +54,9 @@ public class EvaluationService {
 
     private final LlmClient llmClient;
     private final ObjectMapper objectMapper;
-    private final InMemoryInterviewStore store;
+    private final InterviewStore store;
 
-    public EvaluationService(LlmClient llmClient, ObjectMapper objectMapper, InMemoryInterviewStore store) {
+    public EvaluationService(LlmClient llmClient, ObjectMapper objectMapper, InterviewStore store) {
         this.llmClient = llmClient;
         this.objectMapper = objectMapper;
         this.store = store;

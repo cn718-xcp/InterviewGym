@@ -1,6 +1,15 @@
 spring:
   application:
     name: interview-gym
+  datasource:
+    # SQLite 单文件库（D010）：默认相对运行目录 backend/data/（.gitignore 已挡 *.db 与 backend/data/）
+    url: ${SPRING_DATASOURCE_URL:jdbc:sqlite:data/interviewgym.db}
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 1  # SQLite 单写者：串行访问，避免 database locked
+  sql:
+    init:
+      mode: always  # schema.sql 为幂等 DDL（CREATE TABLE IF NOT EXISTS），每次启动安全执行
 
 server:
   port: 8080

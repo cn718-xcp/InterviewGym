@@ -2,11 +2,13 @@ package com.interviewgym.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interviewgym.llm.LlmClient;
-import com.interviewgym.store.InMemoryInterviewStore;
+import com.interviewgym.store.SqliteTestSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -29,14 +31,17 @@ class EvaluationServiceTest {
     private static final int[] ALL_FOURS = {4, 4, 4, 4, 4, 4, 4, 4, 4, 4};
 
     private LlmClient llmClient;
-    private InMemoryInterviewStore store;
+    private com.interviewgym.store.InterviewStore store;
     private EvaluationService service;
+
+    @TempDir
+    Path tempDir;
 
     @BeforeEach
     void setUp() {
         llmClient = mock(LlmClient.class);
-        store = new InMemoryInterviewStore();
-        service = new EvaluationService(llmClient, new ObjectMapper(), store);
+        store = SqliteTestSupport.open(tempDir.resolve("eval.db"));
+        service = new EvaluationService(llmClient, new ObjectMapper().findAndRegisterModules(), store);
     }
 
     private static InterviewSession answeredSession() {

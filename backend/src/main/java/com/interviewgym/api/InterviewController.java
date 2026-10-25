@@ -7,7 +7,8 @@ import com.interviewgym.core.InterviewSession;
 import com.interviewgym.core.Question;
 import com.interviewgym.core.QuestionGenerationService;
 import com.interviewgym.core.SessionStatus;
-import com.interviewgym.store.InMemoryInterviewStore;
+import com.interviewgym.core.SessionSummary;
+import com.interviewgym.store.InterviewStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,11 +36,11 @@ public class InterviewController {
 
     private final QuestionGenerationService questionGenerationService;
     private final EvaluationService evaluationService;
-    private final InMemoryInterviewStore store;
+    private final InterviewStore store;
 
     public InterviewController(QuestionGenerationService questionGenerationService,
                                EvaluationService evaluationService,
-                               InMemoryInterviewStore store) {
+                               InterviewStore store) {
         this.questionGenerationService = questionGenerationService;
         this.evaluationService = evaluationService;
         this.store = store;
@@ -57,6 +58,12 @@ public class InterviewController {
                 SessionStatus.ACTIVE, questions, Map.of(), Instant.now());
         store.saveSession(session);
         return session;
+    }
+
+    /** GET /api/interviews → 会话摘要列表（跨天历史，创建序倒序） */
+    @GetMapping
+    public List<SessionSummary> list() {
+        return store.listSessions();
     }
 
     /** GET /api/interviews/{id} → 会话详情 */

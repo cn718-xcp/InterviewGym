@@ -129,6 +129,20 @@ class InterviewControllerTest {
     }
 
     @Test
+    void listReturnsCreatedSessionsNewestFirst() throws Exception {
+        stubGeneration();
+        String first = JsonPath.read(createSession(), "$.id");
+        String second = JsonPath.read(createSession(), "$.id");
+
+        mockMvc.perform(get("/api/interviews"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(second))
+                .andExpect(jsonPath("$[0].status").value("ACTIVE"))
+                .andExpect(jsonPath("$[0].jdExcerpt").isNotEmpty())
+                .andExpect(jsonPath("$[?(@.id == '" + first + "')]").exists());
+    }
+
+    @Test
     void answerRejectsUnknownQuestionId() throws Exception {
         stubGeneration();
         String sessionId = JsonPath.read(createSession(), "$.id");

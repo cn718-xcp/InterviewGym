@@ -19,17 +19,20 @@ v2 起练习记录与简历需跨天留存（D004 预留的选型时机），以
 ## 行为流程 / 状态机
 
 ```
-saveSession(session)          → INSERT OR REPLACE（payload = 整个 session 的 JSON）
+saveSession(session)          → UPSERT（payload = 整个 session 的 JSON；同 id 整体替换且 version+1）
 findSession(id)               → Optional（payload 反序列化）
-updateSession(id, fn)         → 事务内：读 → fn 应用 → UPDATE ... WHERE id=? AND status=<读到的旧值>（乐观锁）
-                                 影响行数=0 → 并发冲突 → IllegalStateException → API 层 409
+updateSession(id, fn)         → 乐观锁循环（≤5 次）：读(version, payload) → fn 应用 →
+                                 UPDATE ... WHERE id=? AND version=<读到的版本>
+                                 影响行数=0（被并发写顶掉）→ 重读重试——保 v1「并发提交的答案都落地」语义；
+                                 重试耗尽 → IllegalStateException → API 层 409（并发双评估防护，AI-FAILURES #6 不回归）
 saveReport(report)            → INSERT OR REPLACE
 findReport(sessionId)         → Optional
-listSessions()                → 摘要列表（id、status、createdAt、jdText 截断、resumeAssisted），按 createdAt 倒序
+listSessions()                → 摘要列表（id、status、createdAt、jdText 截断 60 字、resumeAssisted、averageScore），
+                                 按创建序倒序（rowid DESC——ISO 时间串精度不一，按其排序会抖动）
 ```
 
 - 表结构（`schema.sql`，幂等 DDL，启动自动执行）：
-  - `sessions(id TEXT PK, status TEXT, created_at TEXT, resume_assisted INT, payload TEXT)`
+  - `sessions(id TEXT PK, status TEXT, created_at TEXT, resume_assisted INT, version INT, payload TEXT)`
   - `reports(session_id TEXT PK, payload TEXT)`
 - 连接：Hikari `maximum-pool-size: 1`（SQLite 单写者，避免 database locked），短事务
 - v1 内存数据不迁移（v1 明示重启即清，用户已知）
@@ -53,6 +56,6 @@ listSessions()                → 摘要列表（id、status、createdAt、jdTex
 - [ ] 整体替换生效（同 id 二次 save 后查回新对象）
 - [ ] 未知 id 返回空 Optional
 - [ ] 报告与会话独立存取
-- [ ] updateSession 并发冲突：两个线程同 id 同旧状态并发更新，恰一个成功
-- [ ] listSessions 倒序、含摘要字段
+- [ ] updateSession 乐观锁：读到旧版本被并发写顶掉时重试成功；两线程并发提交不同答案都落地；重试耗尽 → 409
+- [ ] listSessions 倒序、含摘要字段与 averageScore 联表
 - [ ] 重启"进程"（新建同路径库连接）后数据仍在（跨天留存的本质验证）
