@@ -14,6 +14,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -162,5 +163,67 @@ class LlmClientTest {
         assertThatThrownBy(() -> client(props()).chat("system", "user"))
                 .isInstanceOf(LlmException.class)
                 .hasMessageContaining("返回内容为空");
+    }
+
+    @Test
+    void embedReturnsVectorsAlignedByIndex() {
+        LlmProperties props = props();
+        props.setEmbeddingModel("embedding-3");
+        respondBody = """
+                {"data":[{"index":1,"embedding":[0.2,0.4]},{"index":0,"embedding":[0.1,0.3]}]}
+                """;
+
+        List<float[]> vectors = client(props).embed(List.of("文本一", "文本二"));
+
+        assertThat(vectors).hasSize(2);
+        assertThat(vectors.get(0)).containsExactly(0.1f, 0.3f);
+        assertThat(vectors.get(1)).containsExactly(0.2f, 0.4f);
+        assertThat(lastRequestBody.get())
+                .contains("\"model\":\"embedding-3\"")
+                .contains("\"input\"");
+        assertThat(lastAuthHeader.get()).isEqualTo("Bearer test-key");
+    }
+
+    @Test
+    void embedThrowsIllegalStateWithoutRequestWhenEmbeddingModelUnconfigured() {
+        assertThatThrownBy(() -> client(props()).embed(List.of("文本")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("LLM_EMBEDDING_MODEL");
+
+        // 配置缺失时不得发出任何 HTTP 请求（spec: llm-client.md 不变式）
+        assertThat(lastRequestBody.get()).isNull();
+    }
+
+    @Test
+    void embedThrowsOnEmptyInput() {
+        LlmProperties props = props();
+        props.setEmbeddingModel("embedding-3");
+
+        assertThatThrownBy(() -> client(props).embed(List.of()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void embedThrowsLlmExceptionOnServerErrorStatus() {
+        LlmProperties props = props();
+        props.setEmbeddingModel("embedding-3");
+        respondStatus = 500;
+        respondBody = "{\"error\":{\"message\":\"internal\"}}";
+
+        assertThatThrownBy(() -> client(props).embed(List.of("文本")))
+                .isInstanceOf(LlmException.class)
+                .hasMessageContaining("500")
+                .hasMessageNotContaining("test-key");
+    }
+
+    @Test
+    void embedThrowsWhenResponseCountMismatch() {
+        LlmProperties props = props();
+        props.setEmbeddingModel("embedding-3");
+        respondBody = "{\"data\":[{\"index\":0,\"embedding\":[0.1]}]}";  // 2 入 1 出
+
+        assertThatThrownBy(() -> client(props).embed(List.of("文本一", "文本二")))
+                .isInstanceOf(LlmException.class)
+                .hasMessageContaining("不对应");
     }
 }

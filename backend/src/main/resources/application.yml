@@ -20,4 +20,5 @@ llm:
   base-url: ${LLM_BASE_URL:}
   api-key: ${LLM_API_KEY:}
   model: ${LLM_MODEL:}
+  embedding-model: ${LLM_EMBEDDING_MODEL:}  # v2 简历 RAG 用（D011），如 embedding-3；不配则 RAG 关闭
   read-timeout-seconds: ${LLM_READ_TIMEOUT_SECONDS:90}

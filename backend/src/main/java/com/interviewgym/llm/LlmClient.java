@@ -15,10 +15,11 @@ import org.springframework.web.client.RestClientResponseException;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
- * OpenAI 兼容 chat/completions 的最小客户端（D005 可配置端点、D007 自写 RestClient，spec: docs/specs/llm-client.md）。
- * 只负责一次可靠调用并返回文本内容；JSON 解析与修复重试属 core/ 业务层。
+ * OpenAI 兼容 chat/completions 与 embeddings 的最小客户端（D005 可配置端点、D007 自写 RestClient、D011 嵌入，spec: docs/specs/llm-client.md）。
+ * 只负责一次可靠调用并返回文本/向量；JSON 解析与修复重试属 core/ 业务层。
  */
 @Component
 public class LlmClient {
@@ -43,9 +44,10 @@ public class LlmClient {
     /** 启动自检：配置问题（未配 key / base-url 拼错）在第一发请求前就该可见，而不是等用户撞 502 */
     @PostConstruct
     void logStartupConfig() {
-        log.info("LLM 客户端就绪：base-url=[{}], model=[{}], api-key={}, 读超时={}s",
+        log.info("LLM 客户端就绪：base-url=[{}], model=[{}], api-key={}, 读超时={}s, embedding-model=[{}]",
                 props.getBaseUrl(), props.getModel(),
-                notBlank(props.getApiKey()) ? "已配置" : "未配置", props.getReadTimeoutSeconds());
+                notBlank(props.getApiKey()) ? "已配置" : "未配置", props.getReadTimeoutSeconds(),
+                notBlank(props.getEmbeddingModel()) ? props.getEmbeddingModel() : "未配置（简历 RAG 不可用）");
     }
 
     /**
@@ -69,7 +71,7 @@ public class LlmClient {
                         Map.of("role", "user", "content", userPrompt)));
         try {
             ChatCompletionResponse response = restClient.post()
-                    .uri(completionsUrl())
+                    .uri(endpointUrl("/chat/completions"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .header("Authorization", "Bearer " + props.getApiKey())
                     .body(requestBody)
@@ -83,6 +85,62 @@ public class LlmClient {
             String message = hasIoCause(e) ? "LLM 端点不可达或超时" : "LLM 响应处理失败";
             throw new LlmException(message, e);
         }
+    }
+
+    /**
+     * 批量向量化：POST /embeddings，按 data[].index 对齐，返回与输入等长的向量列表（v2，D011）。
+     *
+     * @throws IllegalArgumentException 输入列表为空
+     * @throws IllegalStateException   嵌入模型未配置（配置缺失，区别于端点故障；调用方据此转 400）
+     * @throws LlmException            端点未配置 / 不可达或超时 / 错误状态码 / 响应与输入不对应
+     */
+    public List<float[]> embed(List<String> texts) {
+        Objects.requireNonNull(texts, "texts");
+        if (texts.isEmpty()) {
+            throw new IllegalArgumentException("embed 输入不得为空");
+        }
+        if (!notBlank(props.getEmbeddingModel())) {
+            throw new IllegalStateException("嵌入模型未配置，请设置环境变量 LLM_EMBEDDING_MODEL");
+        }
+        if (!configured()) {
+            throw new LlmException("LLM 端点未配置，请设置环境变量 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL");
+        }
+        Map<String, Object> requestBody = Map.of("model", props.getEmbeddingModel(), "input", texts);
+        try {
+            EmbeddingResponse response = restClient.post()
+                    .uri(endpointUrl("/embeddings"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + props.getApiKey())
+                    .body(requestBody)
+                    .retrieve()
+                    .body(EmbeddingResponse.class);
+            return alignVectors(texts.size(), response);
+        } catch (RestClientResponseException e) {
+            throw new LlmException("LLM 端点返回错误状态：" + e.getStatusCode().value(), e);
+        } catch (RestClientException e) {
+            String message = hasIoCause(e) ? "LLM 端点不可达或超时" : "LLM 响应处理失败";
+            throw new LlmException(message, e);
+        }
+    }
+
+    /** 端点返回的 data 数量、index 必须与输入一一对应，否则整体视为失败（spec 不变式） */
+    private static List<float[]> alignVectors(int expected, EmbeddingResponse response) {
+        if (response == null || response.data() == null || response.data().size() != expected) {
+            throw new LlmException("嵌入响应与输入数量不对应");
+        }
+        float[][] vectors = new float[expected][];
+        for (EmbeddingData item : response.data()) {
+            if (item == null || item.embedding() == null || item.embedding().isEmpty()
+                    || item.index() < 0 || item.index() >= expected || vectors[item.index()] != null) {
+                throw new LlmException("嵌入响应的 index 或向量不合法");
+            }
+            float[] vector = new float[item.embedding().size()];
+            for (int i = 0; i < vector.length; i++) {
+                vector[i] = item.embedding().get(i).floatValue();
+            }
+            vectors[item.index()] = vector;
+        }
+        return List.of(vectors);
     }
 
     private static boolean hasIoCause(Throwable throwable) {
@@ -102,12 +160,12 @@ public class LlmClient {
     }
 
     /** 尾斜杠归一化：base-url 习惯性带 '/' 时避免拼出 //chat/completions */
-    private String completionsUrl() {
+    private String endpointUrl(String path) {
         String baseUrl = props.getBaseUrl().trim();
         if (baseUrl.endsWith("/")) {
             baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         }
-        return baseUrl + "/chat/completions";
+        return baseUrl + path;
     }
 
     private static boolean notBlank(String s) {
@@ -135,5 +193,13 @@ public class LlmClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record Message(String role, String content) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record EmbeddingResponse(List<EmbeddingData> data) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record EmbeddingData(int index, List<Double> embedding) {
     }
 }
