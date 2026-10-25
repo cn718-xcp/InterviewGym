@@ -41,11 +41,16 @@ export LLM_EMBEDDING_MODEL=embedding-3
 # export LLM_EMBEDDING_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 # export LLM_EMBEDDING_API_KEY=嵌入服务商的key
 # 可选：export LLM_READ_TIMEOUT_SECONDS=90
+# 可选：v3 语音作答需要 ASR 转写端点（OpenAI 兼容 /audio/transcriptions，如硅基流动，SenseVoiceSmall 免费）；不配则语音关闭退回打字
+export LLM_ASR_MODEL=FunAudioLLM/SenseVoiceSmall
+# 可选：ASR 与 chat 不同服务商时独立配置（同嵌入端点的 D013 模式）：
+# export LLM_ASR_BASE_URL=https://api.siliconflow.cn/v1
+# export LLM_ASR_API_KEY=转写服务商的key
 cd backend && mvn spring-boot:run
 ```
 
 > 排查提示：环境变量必须在**运行 mvn 的同一个终端**里设置（`setx` 或系统变量改动后需重开终端；IDE 启动则配在 Run
-> Configuration）。启动后看日志行 `LLM 客户端就绪：base-url=[…], api-key=已配置`——显示"未配置"说明变量没进进程，502
+> Configuration）。启动后看日志行 `LLM 客户端就绪：base-url=[…], api-key=已配置` 与 `ASR 客户端就绪`——显示"未配置"说明变量没进进程，502
 > 也会在日志打出根因（WARN `LLM 调用失败`）。若日志根因是「不可达或超时」且端点配置无误，检查本机系统代理（clash/v2ray 等会拦截
 > JVM 默认网络请求），退出代理或设置 `NO_PROXY` 后重试。
 
@@ -53,6 +58,9 @@ cd backend && mvn spring-boot:run
 交卷出评估报告（逐题得分、总评、薄弱知识点、复习建议）。
 v2 起：可粘贴简历建立向量索引（存本地 SQLite，跨天可用）——项目深挖题将围绕简历中的真实项目出题，
 八股题优先覆盖 JD 与简历技能的交集；首页有历史练习列表，已评估的可回看报告、未答完的可续答。
+v3 起：作答页可「按下说话」——录音上传至你所配置的 ASR 端点转写为文本，回填输入框后可手动修改再交卷；
+支持浏览器本地语音念题（🔊 朗读本题 / 自动朗读开关）。**录音转写后音频即弃：不落库、不写临时文件、不进日志，
+仅转写文本与打字作答同地位参与评估**。录音建议用 Chrome / Edge。
 
 > 数据存于本地 SQLite 单文件 `backend/data/interviewgym.db`（删除该文件即清空全部记录）；
 > 简历与练习内容只发送至你所配置的 LLM 端点，不写日志、不经过任何其他外部服务。
@@ -61,4 +69,5 @@ v2 起：可粘贴简历建立向量索引（存本地 SQLite，跨天可用）�
 
 - [x] Day 1：骨架 + 门禁 + 证据链 + CI
 - [x] v1 文本模拟面试（2026-10-25 本人自验通过：完整跑通一轮，体验尚可）
-- [x] v2 RAG 针对性（2026-10-25 本人自验通过：简历索引 + 结合简历出题跑通，体验还不错）　[ ] v3 语音　[ ] v4 薄弱点面板
+- [x] v2 RAG 针对性（2026-10-25 本人自验通过：简历索引 + 结合简历出题跑通，体验还不错）
+- [ ] v3 语音模拟（2026-10-25 开发完成：92 测试全绿 + 冒烟通过，**待本人自验**——配 ASR 端点后真实跑通一轮语音）　[ ] v4 薄弱点面板
