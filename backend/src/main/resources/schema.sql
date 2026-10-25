@@ -14,3 +14,20 @@ CREATE TABLE IF NOT EXISTS reports (
     session_id TEXT PRIMARY KEY,
     payload    TEXT NOT NULL
 );
+
+-- 简历与其向量索引（spec: resume-rag.md）：单活跃简历（id 恒为 1），上传即全量重建
+CREATE TABLE IF NOT EXISTS resume (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    updated_at  TEXT NOT NULL,
+    source_text TEXT NOT NULL,
+    embed_model TEXT NOT NULL,
+    embed_dim   INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS resume_chunks (
+    seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+    chunk_index INTEGER NOT NULL,
+    section     TEXT NOT NULL,
+    text        TEXT NOT NULL,
+    embedding   BLOB NOT NULL
+);

@@ -11,7 +11,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 
 /**
- * 测试用 SQLite 存储工厂：临时文件库 + 手工执行 schema.sql（不依赖 Spring 上下文）。
+ * 测试用 SQLite 数据源/存储工厂：临时文件库 + 手工执行 schema.sql（不依赖 Spring 上下文）。
  */
 public final class SqliteTestSupport {
 
@@ -20,7 +20,8 @@ public final class SqliteTestSupport {
     private SqliteTestSupport() {
     }
 
-    public static SqliteInterviewStore open(Path dbFile) {
+    /** 新建指向 dbFile 的 DataSource 并执行幂等 schema（同一文件可多次调用） */
+    public static SimpleDriverDataSource newDataSource(Path dbFile) {
         SimpleDriverDataSource dataSource =
                 new SimpleDriverDataSource(new org.sqlite.JDBC(), "jdbc:sqlite:" + dbFile.toAbsolutePath());
         try (Connection connection = dataSource.getConnection()) {
@@ -28,6 +29,10 @@ public final class SqliteTestSupport {
         } catch (SQLException e) {
             throw new IllegalStateException("测试库 schema 初始化失败", e);
         }
-        return new SqliteInterviewStore(new JdbcTemplate(dataSource), OBJECT_MAPPER);
+        return dataSource;
+    }
+
+    public static SqliteInterviewStore open(Path dbFile) {
+        return new SqliteInterviewStore(new JdbcTemplate(newDataSource(dbFile)), OBJECT_MAPPER);
     }
 }
