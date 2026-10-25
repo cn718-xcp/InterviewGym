@@ -1,6 +1,10 @@
 spring:
   application:
     name: interview-gym
+  servlet:
+    multipart:
+      max-file-size: 20MB      # v3 语音录音上传上限（D014，前端 5 分钟自动停录双保险）
+      max-request-size: 25MB
   datasource:
     # SQLite 单文件库（D010）：默认相对运行目录 backend/data/（.gitignore 已挡 *.db 与 backend/data/）
     url: ${SPRING_DATASOURCE_URL:jdbc:sqlite:data/interviewgym.db}

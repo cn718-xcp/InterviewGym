@@ -22,4 +22,7 @@ llm:
   embedding-model: ${LLM_EMBEDDING_MODEL:}
   embedding-base-url: ${LLM_EMBEDDING_BASE_URL:}
   embedding-api-key: ${LLM_EMBEDDING_API_KEY:}
+  asr-model: ${LLM_ASR_MODEL:}        # 默认空 = 语音关闭；需要 enabled=true 的用例在 @SpringBootTest properties 里覆盖
+  asr-base-url: ${LLM_ASR_BASE_URL:}
+  asr-api-key: ${LLM_ASR_API_KEY:}
   read-timeout-seconds: ${LLM_READ_TIMEOUT_SECONDS:90}

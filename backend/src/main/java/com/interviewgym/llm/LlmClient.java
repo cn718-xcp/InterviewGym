@@ -227,6 +227,11 @@ public class LlmClient {
         return false;
     }
 
+    /** ASR 是否可用（asr-model 已配置）：语音功能的总开关，api 层据此显隐（spec: voice-mode.md） */
+    public boolean asrConfigured() {
+        return notBlank(props.getAsrModel());
+    }
+
     private boolean configured() {
         return notBlank(props.getBaseUrl()) && notBlank(props.getApiKey()) && notBlank(props.getModel());
     }

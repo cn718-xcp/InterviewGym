@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
@@ -42,6 +43,12 @@ public class ApiExceptionHandler {
         Throwable root = rootCause(e);
         log.warn("LLM 调用失败：{} | 根因 {}: {}", e.getMessage(), root.getClass().getSimpleName(), root.getMessage());
         return body(HttpStatus.BAD_GATEWAY, "面试官暂时离线（" + e.getMessage() + "），请稍后再试");
+    }
+
+    /** 录音上传超 multipart 上限 → 400 友好提示（spec: voice-mode.md，前端 5 分钟自动停录的双保险） */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, String>> uploadTooLarge(MaxUploadSizeExceededException e) {
+        return body(HttpStatus.BAD_REQUEST, "录音文件过大（上限 20MB），请缩短录音时长");
     }
 
     private static Throwable rootCause(Throwable throwable) {
