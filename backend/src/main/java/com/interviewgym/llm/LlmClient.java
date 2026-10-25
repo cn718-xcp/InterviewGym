@@ -69,7 +69,7 @@ public class LlmClient {
                         Map.of("role", "user", "content", userPrompt)));
         try {
             ChatCompletionResponse response = restClient.post()
-                    .uri(props.getBaseUrl() + "/chat/completions")
+                    .uri(completionsUrl())
                     .contentType(MediaType.APPLICATION_JSON)
                     .header("Authorization", "Bearer " + props.getApiKey())
                     .body(requestBody)
@@ -99,6 +99,15 @@ public class LlmClient {
 
     private boolean configured() {
         return notBlank(props.getBaseUrl()) && notBlank(props.getApiKey()) && notBlank(props.getModel());
+    }
+
+    /** 尾斜杠归一化：base-url 习惯性带 '/' 时避免拼出 //chat/completions */
+    private String completionsUrl() {
+        String baseUrl = props.getBaseUrl().trim();
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+        return baseUrl + "/chat/completions";
     }
 
     private static boolean notBlank(String s) {

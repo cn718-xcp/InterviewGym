@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.UnaryOperator;
 
 /**
  * v1 内存会话存储（D004：不引入数据库；spec: in-memory-store.md）。
@@ -29,6 +30,25 @@ public class InMemoryInterviewStore {
         Objects.requireNonNull(id, "id");
         UUID key = toUuid(id);
         return key == null ? Optional.empty() : Optional.ofNullable(sessions.get(key));
+    }
+
+    /**
+     * 原子读-改-写（ConcurrentHashMap.compute，持锁执行 updater）。
+     * 调用方不得再自行 find→改→save 组合——那会把并发提交互相覆盖（AI-FAILURES #6）。
+     *
+     * @return 更新后的会话；id 不存在或非 UUID 时为空 Optional（调用方转 404）
+     * @throws NullPointerException updater 返回 null（视为编程错误，映射不变）
+     */
+    public Optional<InterviewSession> updateSession(String id, UnaryOperator<InterviewSession> updater) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(updater, "updater");
+        UUID key = toUuid(id);
+        if (key == null) {
+            return Optional.empty();
+        }
+        InterviewSession updated = sessions.compute(key, (k, current) ->
+                current == null ? null : Objects.requireNonNull(updater.apply(current), "updater 结果"));
+        return Optional.ofNullable(updated);
     }
 
     public void saveReport(EvaluationReport report) {

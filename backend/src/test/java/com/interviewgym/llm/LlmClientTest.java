@@ -100,6 +100,26 @@ class LlmClientTest {
     }
 
     @Test
+    void chatThrowsLlmExceptionOn4xxAuthError() {
+        respondStatus = 401;
+        respondBody = "{\"error\":{\"message\":\"invalid api key\"}}";
+
+        assertThatThrownBy(() -> client(props()).chat("system", "user"))
+                .isInstanceOf(LlmException.class)
+                .hasMessageContaining("401")
+                .hasMessageNotContaining("test-key");
+    }
+
+    @Test
+    void chatNormalizesTrailingSlashInBaseUrl() {
+        LlmProperties props = props();
+        props.setBaseUrl(baseUrl + "/");
+        respondBody = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}]}";
+
+        assertThat(client(props).chat("system", "user")).isEqualTo("ok");
+    }
+
+    @Test
     void chatThrowsLlmExceptionOnTimeout() throws IOException {
         // 端点只接受连接、永不响应 —— 读超时（1s）必然触发，确定性模拟超时
         try (ServerSocket silentSocket = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {

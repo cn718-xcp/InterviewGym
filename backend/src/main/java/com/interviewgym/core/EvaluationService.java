@@ -91,8 +91,16 @@ public class EvaluationService {
             }
         }
         EvaluationReport report = aggregate(session, dto);
+        // 原子声明终态：基于当前存储的会话改状态，而非评估开始时的快照——
+        // 防并发双评估双写报告，也防 LLM 调用期间新提交的答案被过期快照抹掉（AI-FAILURES #6）
+        store.updateSession(session.id(), current -> {
+                    if (current.status() == SessionStatus.EVALUATED) {
+                        throw new IllegalStateException("会话已评估，不得重复评估");
+                    }
+                    return current.withStatus(SessionStatus.EVALUATED);
+                })
+                .orElseThrow(() -> new RuntimeException("会话在评估期间消失，内部状态异常"));
         store.saveReport(report);
-        store.saveSession(session.withStatus(SessionStatus.EVALUATED));
         return report;
     }
 

@@ -68,21 +68,22 @@ public class InterviewController {
     /** POST /api/interviews/{id}/answers {questionId, text} → 存答案，返回最新会话 */
     @PostMapping("/{id}/answers")
     public InterviewSession answer(@PathVariable String id, @RequestBody SubmitAnswerRequest request) {
-        InterviewSession session = requireSession(id);
-        if (session.status() != SessionStatus.ACTIVE) {
-            throw new IllegalStateException("会话已评估，不能再作答");
-        }
-        String questionId = request.questionId();
-        if (questionId == null || session.questions().stream().noneMatch(q -> q.id().equals(questionId))) {
-            throw new IllegalArgumentException("questionId 不属于本场面试");
-        }
-        String text = request.text() == null ? "" : request.text().trim();
-        if (text.isEmpty()) {
-            throw new IllegalArgumentException("答案不能为空");
-        }
-        InterviewSession updated = session.withAnswer(new Answer(questionId, text, Instant.now()));
-        store.saveSession(updated);
-        return updated;
+        // 原子读-改-写：并发提交不互相覆盖（AI-FAILURES #6）
+        return store.updateSession(id, session -> {
+                    if (session.status() != SessionStatus.ACTIVE) {
+                        throw new IllegalStateException("会话已评估，不能再作答");
+                    }
+                    String questionId = request.questionId();
+                    if (questionId == null || session.questions().stream().noneMatch(q -> q.id().equals(questionId))) {
+                        throw new IllegalArgumentException("questionId 不属于本场面试");
+                    }
+                    String text = request.text() == null ? "" : request.text().trim();
+                    if (text.isEmpty()) {
+                        throw new IllegalArgumentException("答案不能为空");
+                    }
+                    return session.withAnswer(new Answer(questionId, text, Instant.now()));
+                })
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "会话不存在"));
     }
 
     /** POST /api/interviews/{id}/evaluate → 评估报告（1 次 LLM 调用） */

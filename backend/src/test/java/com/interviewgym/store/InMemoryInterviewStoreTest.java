@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,5 +69,35 @@ class InMemoryInterviewStoreTest {
     void nullArgumentsFailFast() {
         assertThatThrownBy(() -> store.saveSession(null)).isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> store.findSession(null)).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void updateSessionAppliesUpdaterAndStoresResult() {
+        InterviewSession saved = session(UUID.randomUUID().toString());
+        store.saveSession(saved);
+
+        Optional<InterviewSession> updated = store.updateSession(saved.id(), s ->
+                s.withAnswer(new Answer("q1", "新答案", Instant.parse("2026-10-25T11:00:00Z"))));
+
+        assertThat(updated).hasValueSatisfying(s -> assertThat(s.answers()).containsKey("q1"));
+        assertThat(store.findSession(saved.id())).contains(updated.orElseThrow());
+    }
+
+    @Test
+    void updateSessionReturnsEmptyForUnknownId() {
+        assertThat(store.updateSession(UUID.randomUUID().toString(), s -> s)).isEmpty();
+        assertThat(store.updateSession("not-a-uuid", s -> s)).isEmpty();
+    }
+
+    @Test
+    void updateSessionLeavesEntryUnchangedWhenUpdaterThrows() {
+        InterviewSession saved = session(UUID.randomUUID().toString());
+        store.saveSession(saved);
+
+        assertThatThrownBy(() -> store.updateSession(saved.id(), s -> {
+            throw new IllegalStateException("updater 失败");
+        })).isInstanceOf(IllegalStateException.class);
+
+        assertThat(store.findSession(saved.id())).contains(saved);
     }
 }

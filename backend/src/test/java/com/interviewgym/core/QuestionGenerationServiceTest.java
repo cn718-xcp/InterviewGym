@@ -114,6 +114,22 @@ class QuestionGenerationServiceTest {
     }
 
     @Test
+    void generateRetriesOnIllegalDifficultyThenSucceeds() {
+        String illegalDifficulty = questionsJson(IntStream.rangeClosed(1, 10)
+                .mapToObj(i -> questionEntry(i, "\"FUNDAMENTAL\"", i == 7 ? "\"简单\"" : "\"MEDIUM\""))
+                .toArray(String[]::new));
+        when(llmClient.chat(anyString(), anyString()))
+                .thenReturn(illegalDifficulty)
+                .thenReturn(questionsJson(tenEntries()));
+
+        assertThat(service.generate(JD)).hasSize(10);
+
+        ArgumentCaptor<String> userPrompts = ArgumentCaptor.forClass(String.class);
+        verify(llmClient, times(2)).chat(anyString(), userPrompts.capture());
+        assertThat(userPrompts.getAllValues().get(1)).contains("难度非法");
+    }
+
+    @Test
     void generateThrowsWhenRetryStillInvalid() {
         String brokenIndexes = questionsJson(IntStream.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 11)
                 .mapToObj(i -> questionEntry(i, "\"FUNDAMENTAL\"", "\"BASIC\""))

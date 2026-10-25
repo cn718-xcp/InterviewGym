@@ -74,6 +74,7 @@ class EvaluationServiceTest {
                 .thenReturn(reportJson(scores, "[{\"knowledgePoint\":\"KP6\",\"reason\":\"答错\"}]"));
 
         InterviewSession session = answeredSession();
+        store.saveSession(session);
         EvaluationReport report = service.evaluate(session);
 
         assertThat(report.averageScore()).isEqualTo(3.3);
@@ -92,7 +93,9 @@ class EvaluationServiceTest {
         when(llmClient.chat(anyString(), anyString()))
                 .thenReturn(reportJson(scores, llmWeakPoints));
 
-        EvaluationReport report = service.evaluate(answeredSession());
+        InterviewSession session = answeredSession();
+        store.saveSession(session);
+        EvaluationReport report = service.evaluate(session);
 
         assertThat(report.weakPoints()).hasSize(2);
         assertThat(report.weakPoints().get(0).knowledgePoint()).isEqualTo("KP5");
@@ -107,7 +110,9 @@ class EvaluationServiceTest {
                 .thenReturn(reportJson(outOfRange, "[]"))
                 .thenReturn(reportJson(ALL_FOURS, "[]"));
 
-        assertThat(service.evaluate(answeredSession()).averageScore()).isEqualTo(4.0);
+        InterviewSession session = answeredSession();
+        store.saveSession(session);
+        assertThat(service.evaluate(session).averageScore()).isEqualTo(4.0);
 
         ArgumentCaptor<String> userPrompts = ArgumentCaptor.forClass(String.class);
         verify(llmClient, times(2)).chat(anyString(), userPrompts.capture());
@@ -122,7 +127,9 @@ class EvaluationServiceTest {
                 .thenReturn(mismatch)
                 .thenReturn(reportJson(ALL_FOURS, "[]"));
 
-        assertThat(service.evaluate(answeredSession()).perQuestion()).hasSize(10);
+        InterviewSession session = answeredSession();
+        store.saveSession(session);
+        assertThat(service.evaluate(session).perQuestion()).hasSize(10);
 
         ArgumentCaptor<String> userPrompts = ArgumentCaptor.forClass(String.class);
         verify(llmClient, times(2)).chat(anyString(), userPrompts.capture());
@@ -156,11 +163,32 @@ class EvaluationServiceTest {
     }
 
     @Test
+    void evaluateKeepsAnswersSubmittedAfterItsSnapshot() {
+        // 回归测试（AI-FAILURES #6）：评估快照之后提交的答案，不得被评估结束时的整体替换抹掉
+        InterviewSession snapshot = answeredSession();
+        store.saveSession(snapshot);
+        Question firstQuestion = snapshot.questions().get(0);
+        store.updateSession(snapshot.id(), s ->
+                s.withAnswer(new Answer(firstQuestion.id(), "评估期间更新的新答案", Instant.now())));
+
+        when(llmClient.chat(anyString(), anyString())).thenReturn(reportJson(ALL_FOURS, "[]"));
+
+        service.evaluate(snapshot);
+
+        assertThat(store.findSession(snapshot.id())).hasValueSatisfying(s -> {
+            assertThat(s.status()).isEqualTo(SessionStatus.EVALUATED);
+            assertThat(s.answers().get(firstQuestion.id()).text()).isEqualTo("评估期间更新的新答案");
+        });
+    }
+
+    @Test
     void evaluatePromptContainsJdAnswersAndAnchors() {
         when(llmClient.chat(anyString(), anyString()))
                 .thenReturn(reportJson(ALL_FOURS, "[]"));
 
-        service.evaluate(answeredSession());
+        InterviewSession session = answeredSession();
+        store.saveSession(session);
+        service.evaluate(session);
 
         ArgumentCaptor<String> userPrompts = ArgumentCaptor.forClass(String.class);
         verify(llmClient).chat(anyString(), userPrompts.capture());
