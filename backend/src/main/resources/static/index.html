@@ -23,6 +23,7 @@
     background: var(--card); border: 1px solid var(--line); border-radius: 12px;
     padding: 24px; box-shadow: 0 1px 3px rgba(15, 23, 42, .05);
   }
+  .card + .card { margin-top: 16px; }
   label { display: block; font-weight: 600; margin-bottom: 8px; }
   textarea, .fake-input {
     width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 12px;
@@ -47,7 +48,18 @@
   }
   .badge.type-PROJECT { background: #fef3c7; color: #92400e; }
   .badge.type-SCENARIO { background: #dcfce7; color: #166534; }
+  .badge.rag { background: #e0f2fe; color: #075985; }
   .badge.plain { background: var(--bg); color: var(--muted); font-weight: 500; }
+  details.resume { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 14px 0; }
+  details.resume summary { cursor: pointer; font-weight: 600; }
+  .resume-actions { display: flex; gap: 10px; margin-top: 10px; }
+  .hist-row {
+    display: flex; align-items: center; gap: 12px; padding: 10px 4px;
+    border-bottom: 1px solid var(--line); cursor: pointer;
+  }
+  .hist-row:hover { background: var(--bg); }
+  .hist-row .when { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .hist-row .what { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
   .question-text { font-size: 17px; font-weight: 600; margin: 0 0 14px; white-space: pre-wrap; }
   .progress { display: flex; gap: 6px; margin-bottom: 20px; }
   .dot { width: 22px; height: 6px; border-radius: 3px; background: var(--line); }
@@ -75,13 +87,30 @@
     <span>AI 模拟面试官 · 贴 JD，开练</span>
   </header>
 
-  <!-- 屏 1：输入 JD -->
+  <!-- 屏 1：输入 JD + 简历管理 -->
   <section id="screen-create" class="card">
     <div id="create-error" class="banner"></div>
     <label for="jd">目标岗位 JD</label>
     <textarea id="jd" rows="9" placeholder="把招聘 JD 原文粘进来（至少 20 字），面试官会围绕它出 10 道题：6 道八股 + 2 道项目深挖 + 2 道场景设计。"></textarea>
-    <p class="hint">数据只存在本进程内存，重启即清空，不会落盘。</p>
+    <details class="resume" id="resume-box">
+      <summary>我的简历（可选 · 让项目深挖题围绕你的真实项目出）</summary>
+      <div id="resume-status" class="hint" style="margin-top:10px">检查中…</div>
+      <textarea id="resume" rows="6" placeholder="粘贴简历全文（至少 100 字）。保存后切块建索引，出题时自动检索相关片段注入。"></textarea>
+      <div id="resume-error" class="banner"></div>
+      <div class="resume-actions">
+        <button class="ghost" id="btn-resume-save">保存并索引</button>
+        <button class="ghost" id="btn-resume-delete">删除简历</button>
+      </div>
+    </details>
+    <p class="hint">已存简历时出题会自动结合简历；数据存本地 SQLite 文件，跨天可查，仅发送至你配置的 LLM 端点。</p>
     <button id="btn-start">开始面试</button>
+  </section>
+
+  <!-- 历史练习 -->
+  <section id="history-card" class="card" style="display:none">
+    <h3 style="margin:0 0 6px">历史练习</h3>
+    <p class="hint" style="margin:0 0 4px">点击任意一场：已评估的看报告，没答完的继续作答。</p>
+    <div id="history-list"></div>
   </section>
 
   <!-- 屏 2：逐题作答 -->
@@ -116,7 +145,7 @@
     </div>
   </section>
 
-  <footer>InterviewGym v1 · 数据仅存内存 · 仅发送至你配置的 LLM 端点</footer>
+  <footer>InterviewGym v2 · 数据存于本地 SQLite（backend/data/）· 仅发送至你配置的 LLM 端点</footer>
 </div>
 
 <script>
@@ -125,7 +154,7 @@
 const TYPE_LABEL = { FUNDAMENTAL: "八股", PROJECT: "项目深挖", SCENARIO: "场景设计" };
 const DIFFICULTY_LABEL = { BASIC: "基础", MEDIUM: "中等", HARD: "较难" };
 
-let session = null;      // { id, status, questions, answers }
+let session = null;      // { id, status, questions, answers, resumeAssisted }
 let answers = {};        // questionId -> text
 let currentIndex = 0;
 let busy = false;
@@ -136,6 +165,7 @@ function show(screen) {
   for (const id of ["screen-create", "screen-interview", "screen-report"]) {
     $(id).style.display = id === screen ? "" : "none";
   }
+  $("history-card").style.display = screen === "screen-create" ? "" : "none";
 }
 
 function showError(where, message) {
@@ -145,12 +175,124 @@ function showError(where, message) {
 }
 
 async function api(path, options) {
-  const response = await fetch("/api/interviews" + path, options);
+  const response = await fetch(path, options);
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(body.error || ("请求失败（HTTP " + response.status + "）"));
+    const err = new Error(body.error || ("请求失败（HTTP " + response.status + "）"));
+    err.status = response.status;
+    throw err;
   }
   return body;
+}
+
+/* ---------- 简历管理 ---------- */
+
+function renderResumeStatus(status) {
+  const el = $("resume-status");
+  if (!status) {
+    el.textContent = "未上传。上传后项目深挖题将围绕简历中的真实项目出题（需服务端配置 LLM_EMBEDDING_MODEL 环境变量）。";
+    return;
+  }
+  el.textContent = "已索引：切块 " + status.chunkCount + " 块 · 模型 " + status.embedModel +
+    " · 更新于 " + new Date(status.updatedAt).toLocaleString();
+}
+
+async function loadResume() {
+  try {
+    const status = await api("/api/resume");
+    renderResumeStatus(status);
+    $("resume").value = status.sourceText || "";
+  } catch (e) {
+    if (e.status === 404) renderResumeStatus(null);
+    else renderResumeStatus(null);
+  }
+}
+
+async function saveResume() {
+  if (busy) return;
+  const text = $("resume").value.trim();
+  if (text.length < 100) {
+    showError("resume-error", "简历至少 100 字，切不出有效内容没法建索引。");
+    return;
+  }
+  busy = true;
+  const btn = $("btn-resume-save");
+  btn.disabled = true;
+  btn.textContent = "切块 + 向量化中…";
+  showError("resume-error", "");
+  try {
+    renderResumeStatus(await api("/api/resume", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text }),
+    }));
+  } catch (e) {
+    showError("resume-error", e.message);
+  } finally {
+    busy = false;
+    btn.disabled = false;
+    btn.textContent = "保存并索引";
+  }
+}
+
+async function deleteResume() {
+  try {
+    await api("/api/resume", { method: "DELETE" });
+    $("resume").value = "";
+    renderResumeStatus(null);
+    showError("resume-error", "");
+  } catch (e) {
+    showError("resume-error", e.message);
+  }
+}
+
+/* ---------- 历史练习 ---------- */
+
+async function loadHistory() {
+  try {
+    const list = await api("/api/interviews");
+    if (!list.length) return;
+    $("history-list").innerHTML = list
+      .map((s) => {
+        const score = s.averageScore == null ? "" :
+          '<span class="badge plain">' + Number(s.averageScore).toFixed(1) + " 分</span>";
+        const rag = s.resumeAssisted ? '<span class="badge rag">简历</span>' : "";
+        const state = s.status === "EVALUATED" ? "" : '<span class="badge type-PROJECT">未完成</span>';
+        return '<div class="hist-row" data-id="' + s.id + '">' +
+          '<span class="when">' + new Date(s.createdAt).toLocaleString() + "</span>" +
+          '<span class="what">' + escapeHtml(s.jdExcerpt) + "</span>" +
+          state + rag + score + "</div>";
+      })
+      .join("");
+    $("history-list").querySelectorAll(".hist-row").forEach((row) =>
+      row.addEventListener("click", () => openHistory(row.dataset.id)));
+    $("history-card").style.display = "";
+  } catch (e) {
+    /* 历史加载失败不阻断主流程 */
+  }
+}
+
+async function openHistory(id) {
+  try {
+    session = await api("/api/interviews/" + id);
+    if (session.status === "EVALUATED") {
+      const report = await api("/api/interviews/" + id + "/report");
+      renderReport(report);
+      show("screen-report");
+    } else {
+      // 未完成：用服务端已存的答案续答（本地作答状态由 answers 重建）
+      answers = {};
+      for (const [qid, answer] of Object.entries(session.answers || {})) {
+        answers[qid] = answer.text;
+      }
+      currentIndex = session.questions.findIndex((q) => !answers[q.id]);
+      if (currentIndex < 0) currentIndex = session.questions.length - 1;
+      renderQuestion();
+      show("screen-interview");
+    }
+  } catch (e) {
+    showError("create-error", e.message);
+  }
 }
 
 /* ---------- 屏 1 → 屏 2 ---------- */
@@ -169,7 +311,7 @@ async function startInterview() {
   btn.classList.add("spin");
   showError("create-error", "");
   try {
-    session = await api("", {
+    session = await api("/api/interviews", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jdText: jd }),
@@ -203,7 +345,8 @@ function renderQuestion() {
   $("q-badges").innerHTML =
     '<span class="badge type-' + question.type + '">' + TYPE_LABEL[question.type] + "</span>" +
     '<span class="badge plain">' + DIFFICULTY_LABEL[question.difficulty] + "</span>" +
-    '<span class="badge plain">' + escapeHtml(question.knowledgePoint) + "</span>";
+    '<span class="badge plain">' + escapeHtml(question.knowledgePoint) + "</span>" +
+    (session.resumeAssisted ? '<span class="badge rag">已结合简历</span>' : "");
   $("q-text").textContent = "第 " + question.index + " 题 · " + question.content;
   $("answer").value = answers[question.id] || "";
   $("btn-prev").disabled = currentIndex === 0;
@@ -240,15 +383,16 @@ async function submitAll() {
   showError("interview-error", "");
   try {
     for (const question of session.questions) {
-      await api("/" + session.id + "/answers", {
+      await api("/api/interviews/" + session.id + "/answers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ questionId: question.id, text: answers[question.id] }),
       });
     }
-    const report = await api("/" + session.id + "/evaluate", { method: "POST" });
+    const report = await api("/api/interviews/" + session.id + "/evaluate", { method: "POST" });
     renderReport(report);
     show("screen-report");
+    loadHistory();
   } catch (e) {
     showError("interview-error", e.message);
   } finally {
@@ -263,7 +407,7 @@ async function submitAll() {
 
 function renderReport(report) {
   $("r-avg").textContent = report.averageScore.toFixed(1);
-  $("r-summary").textContent = report.summary;
+  $("r-summary").textContent = (session.resumeAssisted ? "本场已结合简历出题 · " : "") + report.summary;
   $("r-weak").innerHTML = report.weakPoints.length === 0
     ? '<li class="hint">没有明显短板，保持。</li>'
     : report.weakPoints
@@ -292,7 +436,7 @@ function renderReport(report) {
     .join("");
 }
 
-/* ---------- 事件绑定 ---------- */
+/* ---------- 事件绑定与初始化 ---------- */
 
 $("btn-start").addEventListener("click", startInterview);
 $("btn-prev").addEventListener("click", () => gotoQuestion(currentIndex - 1));
@@ -306,13 +450,19 @@ $("btn-again").addEventListener("click", () => {
   answers = {};
   $("jd").value = "";
   show("screen-create");
+  loadHistory();
 });
+$("btn-resume-save").addEventListener("click", saveResume);
+$("btn-resume-delete").addEventListener("click", deleteResume);
 
 function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text == null ? "" : String(text);
   return div.innerHTML;
 }
+
+loadResume();
+loadHistory();
 </script>
 </body>
 </html>

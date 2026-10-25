@@ -35,6 +35,8 @@
 export LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4   # 任一 OpenAI 兼容端点
 export LLM_API_KEY=你的key
 export LLM_MODEL=glm-4-xx
+# 可选：v2 简历针对性出题需要嵌入端点（如智谱 embedding-3；不配则 RAG 关闭，退回纯 JD 出题）
+export LLM_EMBEDDING_MODEL=embedding-3
 # 可选：export LLM_READ_TIMEOUT_SECONDS=90
 cd backend && mvn spring-boot:run
 ```
@@ -46,11 +48,14 @@ cd backend && mvn spring-boot:run
 
 浏览器打开 **http://localhost:8080** → 粘贴目标岗位 JD → 开始面试（出题约 30~60 秒）→ 逐题作答 →
 交卷出评估报告（逐题得分、总评、薄弱知识点、复习建议）。
+v2 起：可粘贴简历建立向量索引（存本地 SQLite，跨天可用）——项目深挖题将围绕简历中的真实项目出题，
+八股题优先覆盖 JD 与简历技能的交集；首页有历史练习列表，已评估的可回看报告、未答完的可续答。
 
-> v1 为内存态：重启进程会话即清空，数据不落盘，只发送至你配置的 LLM 端点。
+> 数据存于本地 SQLite 单文件 `backend/data/interviewgym.db`（删除该文件即清空全部记录）；
+> 简历与练习内容只发送至你所配置的 LLM 端点，不写日志、不经过任何其他外部服务。
 
 ## 状态
 
 - [x] Day 1：骨架 + 门禁 + 证据链 + CI
 - [x] v1 文本模拟面试（2026-10-25 本人自验通过：完整跑通一轮，体验尚可）
-- [ ] v2 RAG 针对性　[ ] v3 语音　[ ] v4 薄弱点面板
+- [ ] v2 RAG 针对性（开发完成待自验：同一 JD 有/无简历出题对比，验收线=项目深挖题命中简历真实项目）　[ ] v3 语音　[ ] v4 薄弱点面板
