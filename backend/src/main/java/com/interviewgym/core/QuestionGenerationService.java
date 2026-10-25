@@ -14,7 +14,7 @@ import java.util.UUID;
 import java.util.stream.IntStream;
 
 /**
- * 出题引擎：岗位 JD → 10 题模拟面试（spec: docs/specs/question-generation.md）。
+ * 出题引擎：岗位 JD（+ 可选简历检索片段，v2）→ 10 题模拟面试（spec: docs/specs/question-generation.md）。
  * System/User prompt 与题目构成为红线 3 保护对象，改动需重新走人类确认流程。
  */
 @Component
@@ -44,6 +44,24 @@ public class QuestionGenerationService {
     private static final String REPAIR_SUFFIX_TEMPLATE =
             "\n\n你上一次的输出不是合法 JSON 或不符合 schema（原因：%s）。请严格按 schema 只输出 JSON。";
 
+    /** 红线 3 定稿模板 v2（D012，2026-10-25 plan mode 人类确认）：注入简历检索片段的分支 */
+    private static final String RESUME_USER_PROMPT_TEMPLATE = """
+            【岗位 JD】
+            %s
+
+            【候选人简历（检索片段）】
+            %s
+
+            出题规则：
+            1. 先从 JD 中提取核心技术要求（语言、框架、中间件、领域知识）
+            2. 出 10 题：6 题八股（FUNDAMENTAL，基础知识）+ 2 题项目深挖（PROJECT）+ 2 题场景设计（SCENARIO，真实工作场景问题），覆盖 JD 核心技术点
+            3. 2 道项目深挖题必须围绕【候选人简历】中出现过的真实项目出题，追问该项目中的技术决策、难点与权衡；若简历片段与 JD 技术栈交集不足，则围绕简历中最有深度的项目出题
+            4. 八股题优先覆盖 JD 技术要求与候选人简历技能的交集
+            5. 难度比例：基础:中等:较难 ≈ 4:4:2
+            6. 每题附 knowledgePoint 知识点标签（如 "MySQL 索引"、"并发编程"）
+            7. 只输出严格 JSON，无任何其他文字或 markdown 围栏：{"questions":[{"index":1,"type":"FUNDAMENTAL|PROJECT|SCENARIO","difficulty":"BASIC|MEDIUM|HARD","knowledgePoint":"...","content":"..."}]}
+            """;
+
     private final LlmClient llmClient;
     private final ObjectMapper objectMapper;
 
@@ -57,7 +75,17 @@ public class QuestionGenerationService {
      * @throws com.interviewgym.llm.LlmException LLM 端点失败（向上传播，API 层转 502）
      */
     public List<Question> generate(String jdText) {
-        String userPrompt = USER_PROMPT_TEMPLATE.formatted(jdText);
+        return generate(jdText, null);
+    }
+
+    /**
+     * v2 重载（D012）：resumeContext 为空 → 走 v1 原版模板（逐字节一致，回归测试守护）；
+     * 非空 → 走简历注入模板。题目构成 10 题 6:2:2、难度 4:4:2 两分支完全一致。
+     */
+    public List<Question> generate(String jdText, String resumeContext) {
+        String userPrompt = (resumeContext == null || resumeContext.isBlank())
+                ? USER_PROMPT_TEMPLATE.formatted(jdText)
+                : RESUME_USER_PROMPT_TEMPLATE.formatted(jdText, resumeContext);
         String raw = llmClient.chat(SYSTEM_PROMPT, userPrompt);
         try {
             return parseQuestions(raw);

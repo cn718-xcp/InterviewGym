@@ -143,4 +143,63 @@ class QuestionGenerationServiceTest {
                 .hasMessageContaining("重试后仍不合法");
         verify(llmClient, times(2)).chat(anyString(), anyString());
     }
+
+    /** v1 模板逐字节基线（D012：无简历路径不得漂移，保 v1/v2 对比实验口径干净） */
+    private static String v1Prompt() {
+        return String.join("\n",
+                "以下是候选人目标岗位的 JD：",
+                JD,
+                "",
+                "出题规则：",
+                "1. 先从 JD 中提取核心技术要求（语言、框架、中间件、领域知识）",
+                "2. 出 10 题：6 题八股（type=FUNDAMENTAL，基础知识）+ 2 题项目深挖（type=PROJECT，围绕该岗位典型项目经历的开放追问）"
+                        + "+ 2 题场景设计（type=SCENARIO，真实工作场景问题），覆盖 JD 核心技术点",
+                "3. 难度比例：基础(BASIC):中等(MEDIUM):较难(HARD) 约为 4:4:2",
+                "4. 每题附 knowledgePoint 知识点标签（如 \"MySQL 索引\"、\"并发编程\"）",
+                "5. 只输出严格 JSON，无任何其他文字或 markdown 围栏：",
+                "{\"questions\":[{\"index\":1,\"type\":\"FUNDAMENTAL|PROJECT|SCENARIO\","
+                        + "\"difficulty\":\"BASIC|MEDIUM|HARD\",\"knowledgePoint\":\"...\",\"content\":\"...\"}]}",
+                "");
+    }
+
+    @Test
+    void generateWithoutResumeSendsV1PromptByteForByte() {
+        when(llmClient.chat(anyString(), anyString())).thenReturn(questionsJson(tenEntries()));
+
+        service.generate(JD);
+
+        ArgumentCaptor<String> userPrompt = ArgumentCaptor.forClass(String.class);
+        verify(llmClient).chat(anyString(), userPrompt.capture());
+        assertThat(userPrompt.getValue()).isEqualTo(v1Prompt());
+    }
+
+    @Test
+    void blankResumeContextFallsBackToV1Prompt() {
+        when(llmClient.chat(anyString(), anyString())).thenReturn(questionsJson(tenEntries()));
+
+        assertThat(service.generate(JD, "  ")).hasSize(10);
+
+        ArgumentCaptor<String> userPrompt = ArgumentCaptor.forClass(String.class);
+        verify(llmClient).chat(anyString(), userPrompt.capture());
+        assertThat(userPrompt.getValue()).isEqualTo(v1Prompt());
+    }
+
+    @Test
+    void generateWithResumeInjectsContextAndV2Rules() {
+        String resumeContext = "### 项目经历\n做过 AI 平台与撮合交易平台";
+        when(llmClient.chat(anyString(), anyString())).thenReturn(questionsJson(tenEntries()));
+
+        service.generate(JD, resumeContext);
+
+        ArgumentCaptor<String> userPrompt = ArgumentCaptor.forClass(String.class);
+        verify(llmClient).chat(anyString(), userPrompt.capture());
+        assertThat(userPrompt.getValue())
+                .contains("【岗位 JD】")
+                .contains(JD)
+                .contains("【候选人简历（检索片段）】")
+                .contains(resumeContext)
+                .contains("必须围绕【候选人简历】中出现过的真实项目出题")
+                .contains("八股题优先覆盖 JD 技术要求与候选人简历技能的交集")
+                .doesNotContain("围绕该岗位典型项目经历的开放追问");
+    }
 }

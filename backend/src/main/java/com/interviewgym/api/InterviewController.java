@@ -8,6 +8,7 @@ import com.interviewgym.core.Question;
 import com.interviewgym.core.QuestionGenerationService;
 import com.interviewgym.core.SessionStatus;
 import com.interviewgym.core.SessionSummary;
+import com.interviewgym.rag.ResumeContextRetriever;
 import com.interviewgym.store.InterviewStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,26 +37,32 @@ public class InterviewController {
 
     private final QuestionGenerationService questionGenerationService;
     private final EvaluationService evaluationService;
+    private final ResumeContextRetriever resumeContextRetriever;
     private final InterviewStore store;
 
     public InterviewController(QuestionGenerationService questionGenerationService,
                                EvaluationService evaluationService,
+                               ResumeContextRetriever resumeContextRetriever,
                                InterviewStore store) {
         this.questionGenerationService = questionGenerationService;
         this.evaluationService = evaluationService;
+        this.resumeContextRetriever = resumeContextRetriever;
         this.store = store;
     }
 
-    /** POST /api/interviews {jdText} → 会话 + 10 题（1 次 LLM 调用） */
+    /** POST /api/interviews {jdText} → 会话 + 10 题（1 次 LLM 调用；已索引简历时注入检索片段，D012） */
     @PostMapping
     public InterviewSession create(@RequestBody CreateInterviewRequest request) {
         String jdText = request.jdText() == null ? "" : request.jdText().trim();
         if (jdText.length() < MIN_JD_LENGTH) {
             throw new IllegalArgumentException("JD 不能为空且至少 " + MIN_JD_LENGTH + " 字");
         }
-        List<Question> questions = questionGenerationService.generate(jdText);
+        // 检索失败（无简历/嵌入端点故障/维度失配）由 retriever 内部降级为 empty → 出题退回 v1 行为，不阻断
+        String resumeContext = resumeContextRetriever.retrieveContext(jdText).orElse(null);
+        boolean resumeAssisted = resumeContext != null;
+        List<Question> questions = questionGenerationService.generate(jdText, resumeContext);
         InterviewSession session = new InterviewSession(UUID.randomUUID().toString(), jdText,
-                SessionStatus.ACTIVE, questions, Map.of(), Instant.now());
+                SessionStatus.ACTIVE, questions, Map.of(), Instant.now(), resumeAssisted);
         store.saveSession(session);
         return session;
     }

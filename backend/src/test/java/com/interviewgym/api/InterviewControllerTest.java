@@ -2,8 +2,11 @@ package com.interviewgym.api;
 
 import com.interviewgym.llm.LlmClient;
 import com.interviewgym.llm.LlmException;
+import com.interviewgym.rag.ResumeChunk;
+import com.interviewgym.rag.ResumeRepository;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -17,7 +20,10 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -33,6 +39,9 @@ class InterviewControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private ResumeRepository resumeRepository;
 
     @MockitoBean
     private LlmClient llmClient;
@@ -140,6 +149,29 @@ class InterviewControllerTest {
                 .andExpect(jsonPath("$[0].status").value("ACTIVE"))
                 .andExpect(jsonPath("$[0].jdExcerpt").isNotEmpty())
                 .andExpect(jsonPath("$[?(@.id == '" + first + "')]").exists());
+    }
+
+    @Test
+    void createInjectsResumeContextWhenResumeIndexed() throws Exception {
+        // 预置简历索引（直接写库，绕开嵌入模型配置），出题后清理，保证不影响其他用例
+        resumeRepository.replaceAll("源简历", "embedding-3", 2,
+                List.of(new ResumeChunk(0, "项目经历", "做过 AI 平台与撮合交易平台")),
+                List.of(new float[]{1f, 0f}));
+        try {
+            when(llmClient.embed(anyList())).thenReturn(List.of(new float[]{1f, 0f}));
+            stubGeneration();
+
+            String sessionJson = createSession();
+
+            assertThat((Boolean) JsonPath.read(sessionJson, "$.resumeAssisted")).isTrue();
+            ArgumentCaptor<String> userPrompts = ArgumentCaptor.forClass(String.class);
+            verify(llmClient).chat(anyString(), userPrompts.capture());
+            assertThat(userPrompts.getValue())
+                    .contains("【候选人简历（检索片段）】")
+                    .contains("做过 AI 平台与撮合交易平台");
+        } finally {
+            resumeRepository.deleteAll();
+        }
     }
 
     @Test
