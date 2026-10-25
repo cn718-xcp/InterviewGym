@@ -75,7 +75,7 @@ public class LlmClient {
             ChatCompletionResponse response = restClient.post()
                     .uri(endpointUrl(props.getBaseUrl(), "/chat/completions"))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .header("Authorization", "Bearer " + props.getApiKey())
+                    .header("Authorization", "Bearer " + props.getApiKey().trim())
                     .body(requestBody)
                     .retrieve()
                     .body(ChatCompletionResponse.class);

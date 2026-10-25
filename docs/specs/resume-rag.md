@@ -11,7 +11,7 @@
 - 输入：简历全文文本（粘贴，≥ 100 字符，API 层校验）；JD 文本（检索时刻）
 - 输出：top-k（k=6）简历片段拼装成的上下文字符串（含节标题），供 `QuestionGenerationService.generate(jdText, resumeContext)` 使用
 - 不变式（必须永远成立的事实）：
-  - 简历文本只发往所配置 LLM 端点的 `/embeddings`，不写日志、不落库外文件（红线 2；本地 db 文件属 D010 已告知范围）
+  - 简历文本只发往所配置**嵌入端点**的 `/embeddings`（D013：`LLM_EMBEDDING_BASE_URL` / `LLM_EMBEDDING_API_KEY` 可独立于 chat 端点，缺省复用 chat 配置），不写日志、不落库外文件（红线 2；本地 db 文件属 D010 已告知范围）
   - 单活跃简历：新上传整体替换旧简历及其索引
   - 检索不改变出题构成（10 题 6:2:2 不动，那是 D012 的事，本模块只供上下文）
 
@@ -19,7 +19,7 @@
 
 ```
 上传(PUT /api/resume)
-  ① 校验文本长度 → ② ResumeChunker 切块 → ③ LlmClient.embed(全部块)（一次请求）
+  ① 校验文本长度 → ② ResumeChunker 切块 → ③ LlmClient.embed(全部块)（一次请求；嵌入输入 = 节标题 + 块文本，标题信号进向量）
   ④ 事务内：清旧 chunks + upsert resume 行（source_text、embed_model、embed_dim）+ 写新 chunks（embedding 为 float[] 小端 BLOB）
   模型/维度与库中不一致 → 同样走全量重建（每次上传都是全量重建，天然覆盖）
 
