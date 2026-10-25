@@ -27,6 +27,7 @@ chat(system, user)
 ```
 
 - 超时：连接 5s，读 90s（出题/评估单次生成较慢；`llm.read-timeout-seconds` 可配）
+- 配置校验：base-url / api-key / model 任一为空即抛 `LlmException`，不发请求；base-url 尾部 `/` 自动归一化
 - temperature 固定 0.3：出题与评估要稳定，不要发散
 - 端点未配置（base-url/model 为空）→ 直接抛 `LlmException`，不发请求
 

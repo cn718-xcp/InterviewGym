@@ -37,7 +37,7 @@ export LLM_MODEL=glm-4-xx
 cd backend && mvn spring-boot:run
 ```
 
-> 排查提示：环境变量必须在**运行 mvn 的同一个终端**里设置（`setx` 或系统变量改动后需重开终端；IDE 启动则配在 Run Configuration）。启动后看日志行 `LLM 客户端就绪：base-url=[…], api-key=已配置`——显示"未配置"说明变量没进进程，502 也会在日志打出根因（WARN `LLM 调用失败`）。
+> 排查提示：环境变量必须在**运行 mvn 的同一个终端**里设置（`setx` 或系统变量改动后需重开终端；IDE 启动则配在 Run Configuration）。启动后看日志行 `LLM 客户端就绪：base-url=[…], api-key=已配置`——显示"未配置"说明变量没进进程，502 也会在日志打出根因（WARN `LLM 调用失败`）。若日志根因是「不可达或超时」且端点配置无误，检查本机系统代理（clash/v2ray 等会拦截 JVM 默认网络请求），退出代理或设置 `NO_PROXY` 后重试。
 
 浏览器打开 **http://localhost:8080** → 粘贴目标岗位 JD → 开始面试（出题约 30~60 秒）→ 逐题作答 → 交卷出评估报告（逐题得分、总评、薄弱知识点、复习建议）。
 
