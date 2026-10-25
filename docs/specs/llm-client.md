@@ -1,6 +1,6 @@
 # Spec: LLM 客户端（llm/）
 
-> 契约立于 2026-10-25，v1 迭代动工前（AGENTS.md 红线 6）。对应决策：D005（可配置端点）、D007（自写 RestClient）。
+> 契约立于 2026-10-25，v1 迭代动工前（AGENTS.md 红线 6）。对应决策：D005（可配置端点）、D007（自写 RestClient）。v2（2026-10-25）补 embed() 契约，对应决策 D011。
 
 ## 目的
 
@@ -8,11 +8,11 @@
 
 ## 输入 / 输出边界
 
-- 输入：system prompt + user prompt（String）；`LlmProperties`（base-url / api-key / model / read-timeout-seconds）
-- 输出：LLM 回复的纯文本内容（String）。JSON 解析、schema 校验、修复重试**不在本层**，由 core/ 负责
+- 输入：system prompt + user prompt（String）；`LlmProperties`（base-url / api-key / model / read-timeout-seconds / **embedding-model，v2 起可空**）
+- 输出：`chat` 返回 LLM 回复的纯文本内容（String）；`embed`（v2 新增，D011）返回与输入等长的 `float[]` 向量列表。JSON 解析、schema 校验、修复重试**不在本层**，由 core/ 负责
 - 不变式（必须永远成立的事实）：
   - api-key 只经环境变量 → `LlmProperties` 注入，代码/日志/异常信息中永不出现（红线 1）
-  - 请求只发往配置的 base-url，不引入任何其他外部服务（红线 2）
+  - 请求只发往配置的 base-url，不引入任何其他外部服务（红线 2）；embed 与 chat 共用同一 base-url / api-key
   - 零新 Maven 依赖（D007 的核心收益）；测试与 CI 中**永不调用真实端点**
 
 ## 行为流程 / 状态机
@@ -24,11 +24,17 @@ chat(system, user)
   → POST {base-url}/chat/completions
       body: {model, messages:[{role:system},{role:user}], temperature: 0.3}
   → 读取 choices[0].message.content 返回
+
+embed(texts)                          [v2，D011]
+  → POST {base-url}/embeddings
+      body: {model: embedding-model, input: texts}
+  → 按 data[].index 对齐返回 List<float[]>（维度由端点模型决定，本层不假设）
 ```
 
 - 超时：连接 5s，读 90s（出题/评估单次生成较慢；`llm.read-timeout-seconds` 可配）
 - 配置校验：base-url / api-key / model 任一为空即抛 `LlmException`，不发请求；base-url 尾部 `/` 自动归一化
-- temperature 固定 0.3：出题与评估要稳定，不要发散
+- `embed` 额外校验：`embedding-model` 为空 → `IllegalStateException`（区别于 LlmException：这是配置缺失而非端点故障，调用方据此区分 400/502 语义）；输入列表空 → `IllegalArgumentException`；端点返回条数或 index 与输入不对应 → `LlmException`
+- temperature 固定 0.3（仅 chat）：出题与评估要稳定，不要发散；embed 无 temperature
 - 端点未配置（base-url/model 为空）→ 直接抛 `LlmException`，不发请求
 
 ## 失败与降级
@@ -40,7 +46,7 @@ chat(system, user)
 
 - 密钥的读取与传递路径（只准 `LlmProperties`）
 - 不得为图省事引入 HTTP/JSON 新依赖（红线 5 + D007）
-- 异常信息中不得回显请求体（内含 JD / 答案，红线 2）
+- 异常信息中不得回显请求体（内含 JD / 简历块 / 答案，红线 2）
 - 不得在 src/test 中配置真实端点或密钥
 
 ## 验收测试
@@ -49,3 +55,6 @@ chat(system, user)
 - [x] 端点返回 5xx / 超时 → LlmException，消息不含密钥与请求体
 - [x] base-url 为空时直接抛 LlmException，不发 HTTP 请求
 - [x] 请求体含 model 与两条 message（MockRestServiceServer 校验）
+- [ ] v2：embed 正常响应按 index 对齐返回等长向量列表，请求体含 embedding-model 与 input
+- [ ] v2：embedding-model 未配置 → IllegalStateException，不发请求；空列表入参 → IllegalArgumentException
+- [ ] v2：embed 端点 5xx → LlmException，消息不含密钥与请求体

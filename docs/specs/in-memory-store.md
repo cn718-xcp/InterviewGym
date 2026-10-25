@@ -1,5 +1,7 @@
 # Spec: 内存会话存储（store/InMemoryInterviewStore）
 
+> **[SUPERSEDED 2026-10-25]** v2 起被 `persistent-store.md`（SQLite，D010）取代，实现随 v2 删除。本文保留作为 v1 契约存档。
+>
 > 契约立于 2026-10-25，v1 迭代动工前（AGENTS.md 红线 6）。对应决策 D004（v1 无库）。
 
 ## 目的
