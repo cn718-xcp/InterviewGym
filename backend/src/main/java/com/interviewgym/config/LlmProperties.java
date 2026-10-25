@@ -18,6 +18,9 @@ public class LlmProperties {
     /** 模型名，如 glm-4-air */
     private String model = "";
 
+    /** 单次调用读超时（秒）。出题/评估单次生成较慢，默认给足（spec: llm-client.md） */
+    private int readTimeoutSeconds = 90;
+
     public String getBaseUrl() {
         return baseUrl;
     }
@@ -40,5 +43,13 @@ public class LlmProperties {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public int getReadTimeoutSeconds() {
+        return readTimeoutSeconds;
+    }
+
+    public void setReadTimeoutSeconds(int readTimeoutSeconds) {
+        this.readTimeoutSeconds = readTimeoutSeconds;
     }
 }

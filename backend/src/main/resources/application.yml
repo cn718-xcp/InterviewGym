@@ -11,3 +11,4 @@ llm:
   base-url: ${LLM_BASE_URL:}
   api-key: ${LLM_API_KEY:}
   model: ${LLM_MODEL:}
+  read-timeout-seconds: ${LLM_READ_TIMEOUT_SECONDS:90}
