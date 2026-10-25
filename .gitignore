@@ -24,3 +24,6 @@ backend/data/
 Thumbs.db
 *.log
 logs/
+
+# --- ZCode 会话工具产物 ---
+.zcode/plans/
