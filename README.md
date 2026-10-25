@@ -33,11 +33,15 @@
 export LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4   # 任一 OpenAI 兼容端点
 export LLM_API_KEY=你的key
 export LLM_MODEL=glm-4-xx
+# 可选：export LLM_READ_TIMEOUT_SECONDS=90
 cd backend && mvn spring-boot:run
-curl http://localhost:8080/api/health
 ```
+
+浏览器打开 **http://localhost:8080** → 粘贴目标岗位 JD → 开始面试（出题约 30~60 秒）→ 逐题作答 → 交卷出评估报告（逐题得分、总评、薄弱知识点、复习建议）。
+
+> v1 为内存态：重启进程会话即清空，数据不落盘，只发送至你配置的 LLM 端点。
 
 ## 状态
 
 - [x] Day 1：骨架 + 门禁 + 证据链 + CI
-- [ ] v1 文本模拟面试　[ ] v2 RAG 针对性　[ ] v3 语音　[ ] v4 薄弱点面板
+- [ ] v1 文本模拟面试（功能已完成，34 测试全绿 + 冒烟通过；待本人真实使用一次并愿意用第二次，即验收）　[ ] v2 RAG 针对性　[ ] v3 语音　[ ] v4 薄弱点面板
