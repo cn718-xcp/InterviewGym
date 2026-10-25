@@ -2,6 +2,9 @@ package com.interviewgym.llm;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.interviewgym.config.LlmProperties;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -20,6 +23,8 @@ import java.util.Map;
 @Component
 public class LlmClient {
 
+    private static final Logger log = LoggerFactory.getLogger(LlmClient.class);
+
     /** 出题与评估要稳定不要发散（spec 固定值，不得调高） */
     private static final double TEMPERATURE = 0.3;
     private static final int CONNECT_TIMEOUT_MILLIS = 5_000;
@@ -33,6 +38,14 @@ public class LlmClient {
         requestFactory.setConnectTimeout(CONNECT_TIMEOUT_MILLIS);
         requestFactory.setReadTimeout(props.getReadTimeoutSeconds() * 1_000);
         this.restClient = builder.requestFactory(requestFactory).build();
+    }
+
+    /** 启动自检：配置问题（未配 key / base-url 拼错）在第一发请求前就该可见，而不是等用户撞 502 */
+    @PostConstruct
+    void logStartupConfig() {
+        log.info("LLM 客户端就绪：base-url=[{}], model=[{}], api-key={}, 读超时={}s",
+                props.getBaseUrl(), props.getModel(),
+                notBlank(props.getApiKey()) ? "已配置" : "未配置", props.getReadTimeoutSeconds());
     }
 
     /**

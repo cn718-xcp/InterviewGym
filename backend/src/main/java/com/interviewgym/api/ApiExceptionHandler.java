@@ -2,6 +2,8 @@ package com.interviewgym.api;
 
 import com.interviewgym.core.LlmOutputParseException;
 import com.interviewgym.llm.LlmException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -16,6 +18,8 @@ import java.util.Map;
  */
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> badRequest(IllegalArgumentException e) {
@@ -34,7 +38,18 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler({LlmException.class, LlmOutputParseException.class})
     public ResponseEntity<Map<String, String>> llmUnavailable(RuntimeException e) {
+        // 只记原因类别与根因摘要（消息按设计不含密钥与用户内容，红线 1/2）
+        Throwable root = rootCause(e);
+        log.warn("LLM 调用失败：{} | 根因 {}: {}", e.getMessage(), root.getClass().getSimpleName(), root.getMessage());
         return body(HttpStatus.BAD_GATEWAY, "面试官暂时离线（" + e.getMessage() + "），请稍后再试");
+    }
+
+    private static Throwable rootCause(Throwable throwable) {
+        Throwable root = throwable;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        return root;
     }
 
     private static ResponseEntity<Map<String, String>> body(HttpStatus status, String message) {
