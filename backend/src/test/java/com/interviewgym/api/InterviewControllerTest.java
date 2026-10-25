@@ -107,7 +107,7 @@ class InterviewControllerTest {
                         .contentType(JSON_UTF8)
                         .content("{\"jdText\":\"太短\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").exists());
+                .andExpect(jsonPath("$.error").value("JD 不能为空且至少 20 字"));
     }
 
     @Test
@@ -146,7 +146,7 @@ class InterviewControllerTest {
 
         mockMvc.perform(post("/api/interviews/{id}/evaluate", sessionId))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error").exists());
+                .andExpect(jsonPath("$.error").value("还有题目未作答，答完所有题目后才能评估"));
     }
 
     @Test
