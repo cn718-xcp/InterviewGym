@@ -61,6 +61,10 @@
   .hist-row .when { color: var(--muted); font-size: 12px; white-space: nowrap; }
   .hist-row .what { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
   .question-text { font-size: 17px; font-weight: 600; margin: 0 0 14px; white-space: pre-wrap; }
+  .voice-row { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; flex-wrap: wrap; }
+  .voice-row .hint { margin: 0; }
+  #btn-record.recording { background: var(--warn); border-color: var(--warn); color: #fff; }
+  .inline-check { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 500; cursor: pointer; }
   .progress { display: flex; gap: 6px; margin-bottom: 20px; }
   .dot { width: 22px; height: 6px; border-radius: 3px; background: var(--line); }
   .dot.filled { background: var(--accent); }
@@ -119,7 +123,15 @@
     <div class="progress" id="progress"></div>
     <div class="badges" id="q-badges"></div>
     <p class="question-text" id="q-text"></p>
-    <textarea id="answer" rows="9" placeholder="像面试一样口述作答，想到什么写什么，写完点下一题。"></textarea>
+    <div class="voice-row" id="voice-row">
+      <button class="ghost" id="btn-speak" style="display:none">🔊 朗读本题</button>
+      <label class="inline-check" id="auto-speak-box" style="display:none">
+        <input type="checkbox" id="chk-auto-speak"> 自动朗读
+      </label>
+      <button class="ghost" id="btn-record" style="display:none">🎤 按下说话</button>
+      <span id="voice-state" class="hint"></span>
+    </div>
+    <textarea id="answer" rows="9" placeholder="像面试一样口述作答：点麦克风说，或直接打字，写完点下一题。"></textarea>
     <div class="nav">
       <button class="ghost" id="btn-prev">上一题</button>
       <button id="btn-next">下一题</button>
@@ -145,7 +157,7 @@
     </div>
   </section>
 
-  <footer>InterviewGym v2 · 数据存于本地 SQLite（backend/data/）· 仅发送至你配置的 LLM 端点</footer>
+  <footer>InterviewGym v3 · 录音转写后音频即弃，仅文本参与作答 · 数据存于本地 SQLite · 仅发送至你配置的 LLM 端点</footer>
 </div>
 
 <script>
@@ -330,9 +342,140 @@ async function startInterview() {
   }
 }
 
+/* ---------- 语音：录音转写（D014）+ 本地念题（D015） ---------- */
+
+let voiceEnabled = false;      // 服务端 asr-model 已配置
+let voiceBusy = false;         // 转写请求进行中，期间不可再录
+let mediaRecorder = null;
+let audioChunks = [];
+let recordTimer = null;
+let recordSeconds = 0;
+let recordQuestionId = null;   // 开录时所在题——转写回来追加到该题，切题也不串题
+const MAX_RECORD_SECONDS = 300;
+const TTS_SUPPORTED = "speechSynthesis" in window;
+let autoSpeak = localStorage.getItem("autoSpeak") === "1";
+
+async function loadVoiceCapability() {
+  try {
+    voiceEnabled = !!(await api("/api/voice")).enabled;
+  } catch (e) {
+    voiceEnabled = false;
+  }
+  const canRecord = voiceEnabled && !!(navigator.mediaDevices && window.MediaRecorder);
+  $("btn-record").style.display = canRecord ? "" : "none";
+  if (voiceEnabled && !canRecord) {
+    $("voice-state").textContent = "当前浏览器不支持录音，建议用 Chrome / Edge（或直接打字）";
+  }
+  if (TTS_SUPPORTED) {
+    $("btn-speak").style.display = "";
+    $("auto-speak-box").style.display = "";
+    $("chk-auto-speak").checked = autoSpeak;
+  }
+}
+
+function fmtTime(sec) {
+  return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0");
+}
+
+function startRecording() {
+  if (voiceBusy) return;
+  navigator.mediaDevices.getUserMedia({ audio: true })
+    .then((stream) => {
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus" : "";
+      mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime })
+                           : new MediaRecorder(stream);
+      audioChunks = [];
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+      mediaRecorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());  // 立即释放麦克风
+        uploadRecording(new Blob(audioChunks, { type: mediaRecorder.mimeType || "audio/webm" }));
+      };
+      mediaRecorder.start();
+      recordQuestionId = session.questions[currentIndex].id;
+      recordSeconds = 0;
+      $("btn-record").textContent = "⏹ 停止并转写";
+      $("btn-record").classList.add("recording");
+      $("voice-state").textContent = "录音中 0:00（再按一次结束）";
+      recordTimer = setInterval(() => {
+        recordSeconds++;
+        $("voice-state").textContent = "录音中 " + fmtTime(recordSeconds) + "（再按一次结束）";
+        if (recordSeconds >= MAX_RECORD_SECONDS) stopRecording();  // 5 分钟自动停，后端 20MB 是第二道保险
+      }, 1000);
+    })
+    .catch((e) => showError("interview-error",
+      "无法访问麦克风（" + e.name + "）。检查浏览器权限，或直接打字作答。"));
+}
+
+function stopRecording() {
+  if (recordTimer) { clearInterval(recordTimer); recordTimer = null; }
+  if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
+}
+
+function resetRecordButton() {
+  voiceBusy = false;
+  $("btn-record").disabled = false;
+  $("btn-record").textContent = "🎤 按下说话";
+  $("btn-record").classList.remove("recording");
+}
+
+async function uploadRecording(blob) {
+  voiceBusy = true;
+  $("btn-record").disabled = true;
+  $("voice-state").textContent = "上传转写中…（音频只发往你配置的转写端点，转写后即弃）";
+  try {
+    const form = new FormData();
+    form.append("file", blob, "answer.webm");
+    const text = ((await api("/api/voice/transcribe", { method: "POST", body: form })).text || "").trim();
+    if (!text) throw new Error("转写结果为空");
+    appendTranscript(recordQuestionId, text);
+    $("voice-state").textContent = "已转写（可手动修改）。";
+  } catch (e) {
+    $("voice-state").textContent = "";
+    showError("interview-error", "转写失败：" + e.message + "。可重试，或直接打字。");
+  } finally {
+    resetRecordButton();
+  }
+}
+
+/** 转写文本回到开录时那道题：还在这题就进输入框，已切题就存进本地答案缓存 */
+function appendTranscript(questionId, text) {
+  if (questionId && session.questions[currentIndex].id === questionId) {
+    const box = $("answer");
+    box.value = box.value.trim() ? box.value.replace(/\s+$/, "") + "\n" + text : text;
+  } else {
+    answers[questionId] = answers[questionId]
+      ? answers[questionId].replace(/\s+$/, "") + "\n" + text : text;
+  }
+}
+
+function speakCurrent() {
+  if (!TTS_SUPPORTED || !session) return;
+  const question = session.questions[currentIndex];
+  const utterance = new SpeechSynthesisUtterance("第 " + question.index + " 题。" + question.content);
+  utterance.lang = "zh-CN";
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utterance);
+}
+
+function stopSpeaking() {
+  if (TTS_SUPPORTED) window.speechSynthesis.cancel();
+}
+
+$("btn-record").addEventListener("click", () => {
+  if (mediaRecorder && mediaRecorder.state === "recording") stopRecording();
+  else startRecording();
+});
+$("btn-speak").addEventListener("click", speakCurrent);
+$("chk-auto-speak").addEventListener("change", () => {
+  autoSpeak = $("chk-auto-speak").checked;
+  localStorage.setItem("autoSpeak", autoSpeak ? "1" : "0");
+});
+
 /* ---------- 屏 2：逐题作答 ---------- */
 
 function renderQuestion() {
+  stopSpeaking();  // 切题即停读（spec: voice-mode.md）
   const question = session.questions[currentIndex];
   $("progress").innerHTML = session.questions
     .map((q, i) => {
@@ -352,6 +495,7 @@ function renderQuestion() {
   $("btn-prev").disabled = currentIndex === 0;
   const isLast = currentIndex === session.questions.length - 1;
   $("btn-next").textContent = isLast ? "交卷，出评估报告" : "下一题";
+  if (autoSpeak) speakCurrent();
 }
 
 function saveCurrentAnswer() {
@@ -360,6 +504,7 @@ function saveCurrentAnswer() {
 }
 
 function gotoQuestion(index) {
+  stopRecording();  // 切题即停录，转写回来仍会追加到开录时那道题
   saveCurrentAnswer();
   currentIndex = Math.max(0, Math.min(session.questions.length - 1, index));
   renderQuestion();
@@ -367,6 +512,8 @@ function gotoQuestion(index) {
 
 async function submitAll() {
   if (busy) return;
+  stopRecording();
+  stopSpeaking();
   saveCurrentAnswer();
   const unanswered = session.questions.filter((q) => !answers[q.id]);
   if (unanswered.length > 0) {
@@ -463,6 +610,7 @@ function escapeHtml(text) {
 
 loadResume();
 loadHistory();
+loadVoiceCapability();
 </script>
 </body>
 </html>
