@@ -9,6 +9,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
@@ -49,6 +51,17 @@ public class ApiExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, String>> uploadTooLarge(MaxUploadSizeExceededException e) {
         return body(HttpStatus.BAD_REQUEST, "录音文件过大（上限 20MB），请缩短录音时长");
+    }
+
+    /** multipart 体损坏（边界非法等）与缺 file part → 400 同构错误体（其余 400 均为 {"error":...}，审查轮补齐） */
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<Map<String, String>> malformedMultipart(MultipartException e) {
+        return body(HttpStatus.BAD_REQUEST, "录音上传格式异常，请重新录音再试");
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<Map<String, String>> missingPart(MissingServletRequestPartException e) {
+        return body(HttpStatus.BAD_REQUEST, "缺少录音文件（file），请重新录音再试");
     }
 
     private static Throwable rootCause(Throwable throwable) {

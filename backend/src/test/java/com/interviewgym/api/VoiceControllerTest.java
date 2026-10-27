@@ -84,6 +84,14 @@ class VoiceControllerTest {
                 .andExpect(jsonPath("$.error").value("录音内容为空，请先录音再转写"));
     }
 
+    /** 缺 file part 也须回同构 {"error":...} 400（审查轮补：默认走 Spring 原生错误体，与其余错误口径不同构） */
+    @Test
+    void transcribeRejectsMissingFilePart() throws Exception {
+        mockMvc.perform(multipart("/api/voice/transcribe"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("缺少录音文件（file），请重新录音再试"));
+    }
+
     @Test
     void transcribeReturns400WhenAsrModelUnconfigured() throws Exception {
         // LlmClient 的配置缺失异常在控制器转 400（同 ResumeIndexService 口径，spec: voice-mode.md）

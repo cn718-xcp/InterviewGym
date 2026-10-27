@@ -41,7 +41,7 @@ public class VoiceController {
             return Map.of("text", llmClient.transcribe(read(file), file.getOriginalFilename(), file.getContentType()));
         } catch (IllegalStateException e) {
             // 配置缺失 → 400（全局把 IllegalStateException 映射为 409，语义不符；同 ResumeIndexService 的转换口径）
-            throw new IllegalArgumentException(e.getMessage());
+            throw new IllegalArgumentException(e.getMessage(), e);
         }
     }
 
@@ -49,7 +49,7 @@ public class VoiceController {
         try {
             return file.getBytes();
         } catch (IOException e) {
-            throw new IllegalArgumentException("录音读取失败，请重试");
+            throw new IllegalArgumentException("录音读取失败，请重试", e);
         }
     }
 }

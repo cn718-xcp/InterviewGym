@@ -455,7 +455,8 @@ function speakCurrent() {
   const utterance = new SpeechSynthesisUtterance("第 " + question.index + " 题。" + question.content);
   utterance.lang = "zh-CN";
   window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(utterance);
+  // Chrome 已知怪癖：cancel() 同一 tick 内 speak() 可能被吞，延迟一拍再读
+  setTimeout(() => window.speechSynthesis.speak(utterance), 50);
 }
 
 function stopSpeaking() {
@@ -512,6 +513,15 @@ function gotoQuestion(index) {
 
 async function submitAll() {
   if (busy) return;
+  // 语音竞态防护（审查轮）：录音中/转写飞行中交卷，报告会缺这一题的口述内容——先拦
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    showError("interview-error", "还在录音，先点「⏹ 停止并转写」再交卷。");
+    return;
+  }
+  if (voiceBusy) {
+    showError("interview-error", "上一段录音还在转写中，等它完成后再交卷（或直接手打补充）...");
+    return;
+  }
   stopRecording();
   stopSpeaking();
   saveCurrentAnswer();

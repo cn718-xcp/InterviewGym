@@ -33,6 +33,7 @@
 ```
 
 - 念题（TTS，D015）：浏览器 `speechSynthesis` 本地 zh-CN 语音；每题「🔊 朗读本题」+「自动朗读」开关（localStorage 持久化，默认关）；切题/切屏即 cancel。零网络、零后端改动。
+- multipart 配置（v3 审查轮补实现锚点）：`max-file-size: 20MB` / `max-request-size: 25MB` / **`file-size-threshold: 20MB`**——后者是「不写临时文件」不变式的落地关键：默认值 0 会让 Tomcat 在请求解析阶段就把录音写进磁盘临时文件，阈值 = 上限使录音全程留内存
 
 ## 失败与降级
 
